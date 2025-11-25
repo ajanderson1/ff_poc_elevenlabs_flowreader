@@ -1,0 +1,70 @@
+{
+  "blocks": [
+    {
+      "start_c": 1,
+      "end_c": 10,
+      "original": "Benyamin Netanyahu",
+      "translation": "Benyamin Netanyahu"
+    },
+    {
+      "start_c": 20,
+      "end_c": 22,
+      "original": "a affirmé",
+      "translation": "stated"
+    },
+    {
+      "start_c": 30,
+      "end_c": 45,
+      "original": "ce dimanche 21 septembre",
+      "translation": "this Sunday, September 21st"
+    },
+    {
+      "start_c": 55,
+      "end_c": 81,
+      "original": "qu'il n'y aura pas d'État palestinien,",
+      "translation": "that there will be no Palestinian state,"
+    },
+    {
+      "start_c": 94,
+      "end_c": 103,
+      "original": "dans une vidéo",
+      "translation": "in a video"
+    },
+    {
+      "start_c": 109,
+      "end_c": 136,
+      "original": "à l'adresse des dirigeants occidentaux",
+      "translation": "addressed to Western leaders"
+    },
+    {
+      "start_c": 148,
+      "end_c": 175,
+      "original": "ayant reconnu plus tôt cet État.",
+      "translation": "who had recognized this state earlier."
+    },
+    {
+      "start_c": 181,
+      "end_c": 201,
+      "original": "Le Premier ministre israélien",
+      "translation": "The Israeli Prime Minister"
+    },
+    {
+      "start_c": 211,
+      "end_c": 226,
+      "original": "a par ailleurs affirmé",
+      "translation": "also stated"
+    },
+    {
+      "start_c": 234,
+      "end_c": 269,
+      "original": "qu'Israël allait étendre encore la colonisation",
+      "translation": "that Israel would further extend settlements"
+    },
+    {
+      "start_c": 282,
+      "end_c": 297,
+      "original": "en Cisjordanie occupée.",
+      "translation": "in the occupied West Bank."
+    }
+  ]
+}

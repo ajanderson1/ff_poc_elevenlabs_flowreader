@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "ElevenLabs Reader Translator",
+  "version": "1.0",
+  "description": "Injects inline translations into ElevenLabs Reader.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://elevenreader.io/*",
+    "https://*.elevenreader.io/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://elevenreader.io/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["mock-llm-response.json"],
+      "matches": ["https://elevenreader.io/*"]
+    }
+  ]
+}

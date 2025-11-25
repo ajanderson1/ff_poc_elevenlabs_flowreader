@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>ElevenLabs Translator</title>
+  <style>
+    body {
+      width: 200px;
+      padding: 10px;
+      font-family: sans-serif;
+    }
+
+    button {
+      width: 100%;
+      padding: 8px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+
+    /* New styles for the added elements */
+    .container {
+      padding: 0;
+      /* Adjust as needed */
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 34px;
+      height: 20px;
+      margin-right: 10px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      -webkit-transition: .4s;
+      transition: .4s;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      -webkit-transition: .4s;
+      transition: .4s;
+    }
+
+    input:checked+.slider {
+      background-color: #2196F3;
+    }
+
+    input:focus+.slider {
+      box-shadow: 0 0 1px #2196F3;
+    }
+
+    input:checked+.slider:before {
+      -webkit-transform: translateX(14px);
+      -ms-transform: translateX(14px);
+      transform: translateX(14px);
+    }
+
+    .slider.round {
+      border-radius: 20px;
+    }
+
+    .slider.round:before {
+      border-radius: 50%;
+    }
+
+    .api-key-section {
+      margin-top: 15px;
+      border-top: 1px solid #eee;
+      padding-top: 15px;
+    }
+
+    .api-key-section label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+
+    .api-key-section input[type="password"] {
+      width: calc(100% - 16px);
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    .api-key-section button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+
+    #status-msg {
+      margin-top: 10px;
+      font-size: 0.9em;
+      color: green;
+    }
+
+    .section-header {
+      font-weight: bold;
+      margin-top: 15px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 4px;
+    }
+
+    .toggle-group {
+      margin-bottom: 12px;
+    }
+
+    .group-label {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+
+    .footer {
+      margin-top: 20px;
+      border-top: 1px solid #eee;
+      padding-top: 10px;
+      font-size: 0.8em;
+      color: #666;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>ElevenLabs Translator</h1>
+
+    <div class="control-group">
+      <label class="switch">
+        <input type="checkbox" id="toggle-extension">
+        <span class="slider round"></span>
+      </label>
+      <span>Enable Extension</span>
+    </div>
+
+    <div class="control-group">
+      <label class="switch">
+        <input type="checkbox" id="toggle-testing">
+        <span class="slider round"></span>
+      </label>
+      <span>Testing Mode (Mock Data)</span>
+    </div>
+
+    <div class="section-header">Partitioning</div>
+
+    <div class="control-group">
+      <label class="switch">
+        <input type="checkbox" id="partitioning-enabled" checked>
+        <span class="slider round"></span>
+      </label>
+      <span>Enable Meaning Blocks</span>
+    </div>
+
+    <div class="api-key-section">
+      <label for="api-key">OpenAI API Key:</label>
+      <input type="password" id="api-key" placeholder="sk-..." />
+      <button id="save-key">Save Key</button>
+      <p id="status-msg"></p>
+    </div>
+
+    <div class="footer">
+      <p>Hold the "文" button on the reader page to see translations.</p>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+
+</html>
