@@ -178,7 +178,7 @@ body.elt-show-highlighting .clause-debug-container {
     box-shadow: none;
 }
 
-/* Centered Translation Overlay */
+/* Centered Translation Overlay (legacy - kept for backwards compatibility) */
 .translation-overlay {
     /* Override previous styles if needed, but keeping base styles */
     transform: translateX(-50%);
@@ -188,4 +188,60 @@ body.elt-show-highlighting .clause-debug-container {
     /* Allow wrapping */
     max-width: 300px;
     /* Prevent too wide overlays */
+}
+
+/* Multi-line translation overlay container */
+.translation-overlay-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 10000;
+    display: none;
+}
+
+.translation-overlay-container.translation-visible {
+    display: block !important;
+}
+
+/* Individual translation line - positioned absolutely within container */
+.translation-line {
+    position: absolute;
+    font-size: 0.7em;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+    white-space: nowrap;
+    text-align: center;
+    transform: translateX(-50%);
+    max-width: 90vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* Light mode default */
+    color: #6366f1;  /* Indigo - distinct from black text */
+}
+
+/* Dark mode support via media query */
+@media (prefers-color-scheme: dark) {
+    .translation-line {
+        color: #a5b4fc;  /* Lighter indigo for dark backgrounds */
+    }
+}
+
+/* Dark mode support via body class (for sites that toggle manually) */
+body.dark .translation-line,
+body.dark-mode .translation-line,
+body[data-theme="dark"] .translation-line,
+html.dark .translation-line,
+html[data-theme="dark"] .translation-line {
+    color: #a5b4fc;
+}
+
+/* Light mode explicit override */
+body.light .translation-line,
+body.light-mode .translation-line,
+body[data-theme="light"] .translation-line,
+html.light .translation-line,
+html[data-theme="light"] .translation-line {
+    color: #6366f1;
 }

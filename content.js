@@ -111,6 +111,7 @@ function extractTokens(p) {
         } else if (node.nodeType === Node.ELEMENT_NODE) {
             // Skip existing overlays
             if (node.classList.contains('translation-overlay') ||
+                node.classList.contains('translation-overlay-container') ||
                 node.classList.contains('clause-debug-highlight') ||
                 node.id === 'elevenlabs-translator-toggle' ||
                 node.id === 'elevenlabs-processing-banner') {
@@ -426,13 +427,12 @@ function renderSegmentations(p, alignedSegments) {
         const { segment, range } = item;
         Logger.log(`Creating overlay ${index}:`, segment.type, segment.translation?.substring(0, 30));
 
-        // 1. Translation Overlay
-        const overlay = document.createElement('div');
-        overlay.className = 'translation-overlay';
-        if (translationsVisible) overlay.classList.add('translation-visible');
-        overlay.textContent = segment.translation;
-        document.body.appendChild(overlay);
-        p._translationOverlays.push(overlay);
+        // 1. Translation Overlay Container (multi-line support)
+        const overlayContainer = document.createElement('div');
+        overlayContainer.className = 'translation-overlay-container';
+        if (translationsVisible) overlayContainer.classList.add('translation-visible');
+        document.body.appendChild(overlayContainer);
+        p._translationOverlays.push(overlayContainer);
 
         // 2. Segment Highlight Container (always created for visual feedback)
         const debugEl = document.createElement('div');
@@ -442,10 +442,11 @@ function renderSegmentations(p, alignedSegments) {
 
         activeOverlays.push({
             range,
-            overlayElement: overlay,
+            overlayElement: overlayContainer,
             debugElement: debugEl,
             type: segment.type,
-            colorIndex: index % SEGMENT_COLOR_PALETTE.length  // Cycle through colors
+            colorIndex: index % SEGMENT_COLOR_PALETTE.length,
+            translation: segment.translation  // Store for use in updateOverlayPositions
         });
     });
 
@@ -488,27 +489,107 @@ function mergeRectsPerLine(rects) {
     return lines;
 }
 
+/**
+ * Splits translation text proportionally to match original line widths.
+ * @param {string} translation - Full translation text
+ * @param {Array<{width: number}>} lineRects - Merged line rectangles from original
+ * @returns {Array<string>} Translation text split per line
+ */
+function splitTranslationByLines(translation, lineRects) {
+    if (!translation || lineRects.length <= 1) {
+        return [translation || ''];
+    }
+
+    const words = translation.split(/\s+/).filter(w => w.length > 0);
+    if (words.length === 0) return [translation];
+
+    // Calculate total width and proportions
+    const totalWidth = lineRects.reduce((sum, r) => sum + r.width, 0);
+    if (totalWidth === 0) return [translation];
+
+    const proportions = lineRects.map(r => r.width / totalWidth);
+
+    // Calculate total character count (excluding spaces)
+    const totalChars = words.join('').length;
+
+    const lines = [];
+    let wordIndex = 0;
+
+    for (let i = 0; i < lineRects.length; i++) {
+        const targetChars = Math.round(proportions[i] * totalChars);
+        let lineWords = [];
+        let lineCharCount = 0;
+
+        // Last line gets all remaining words
+        if (i === lineRects.length - 1) {
+            lineWords = words.slice(wordIndex);
+        } else {
+            // Accumulate words until we reach target character count
+            while (wordIndex < words.length) {
+                const word = words[wordIndex];
+                const newCharCount = lineCharCount + word.length;
+
+                // Add word if we haven't reached target, or if line is empty
+                if (lineCharCount < targetChars || lineWords.length === 0) {
+                    lineWords.push(word);
+                    lineCharCount = newCharCount;
+                    wordIndex++;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        lines.push(lineWords.join(' '));
+    }
+
+    // Handle case where we have more lines than words
+    while (lines.length < lineRects.length) {
+        lines.push('');
+    }
+
+    return lines;
+}
+
 function updateOverlayPositions() {
     activeOverlays.forEach((item, idx) => {
         const rects = item.range.getClientRects();
         if (!rects.length) return;
 
-        // For the overlay, we want the center of the bounding box
-        const boundingRect = item.range.getBoundingClientRect();
-
         const overlay = item.overlayElement;
-        const top = boundingRect.top + window.scrollY - overlay.offsetHeight - 5;
-        const left = boundingRect.left + window.scrollX + (boundingRect.width / 2);
+        const translation = item.translation || '';
 
-        overlay.style.top = `${top}px`;
-        overlay.style.left = `${left}px`;
+        // Merge rectangles by line (same logic used for debug highlighting)
+        const mergedLines = mergeRectsPerLine(rects);
 
-        // For highlight, merge rects on same line for continuous blocks
+        // Clear existing line elements and recreate
+        overlay.innerHTML = '';
+
+        if (mergedLines.length === 0) return;
+
+        // Split translation to match line count
+        const translationLines = splitTranslationByLines(translation, mergedLines);
+
+        // Create positioned overlay for each line
+        mergedLines.forEach((line, lineIdx) => {
+            const lineOverlay = document.createElement('div');
+            lineOverlay.className = 'translation-line';
+            lineOverlay.textContent = translationLines[lineIdx] || '';
+
+            // Position: centered above the original line
+            const estimatedHeight = 20;
+            const top = line.top + window.scrollY - estimatedHeight - 8;
+            const centerX = line.left + window.scrollX + (line.width / 2);
+
+            lineOverlay.style.top = `${top}px`;
+            lineOverlay.style.left = `${centerX}px`;
+
+            overlay.appendChild(lineOverlay);
+        });
+
+        // Debug highlighting (unchanged - already per-line)
         if (item.debugElement) {
             item.debugElement.innerHTML = '';
-
-            // Merge rectangles on same line into continuous blocks
-            const mergedLines = mergeRectsPerLine(rects);
 
             for (const line of mergedLines) {
                 const box = document.createElement('div');
@@ -674,7 +755,8 @@ function injectToggleButton() {
 let translationsVisible = false;
 function setTranslationsVisibility(visible) {
     translationsVisible = visible;
-    const overlays = document.querySelectorAll('.translation-overlay');
+    // Handle both legacy single overlays and new multi-line containers
+    const overlays = document.querySelectorAll('.translation-overlay, .translation-overlay-container');
     overlays.forEach(el => {
         if (visible) el.classList.add('translation-visible');
         else el.classList.remove('translation-visible');
