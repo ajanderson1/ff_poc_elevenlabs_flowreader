@@ -901,6 +901,246 @@ if (document.readyState === 'loading') {
     init();
 }
 
+// --- Keyboard Navigation ---
+
+// Double-press detection state
+let lastLeftArrowTime = 0;
+let lastRightArrowTime = 0;
+const DOUBLE_PRESS_THRESHOLD = 300; // ms
+
+/**
+ * Get all meaning block boundaries sorted by position
+ * Returns array of { startC, endC, firstSpan } objects
+ */
+function getBlockBoundaries() {
+    const boundaries = [];
+
+    for (const overlay of activeOverlays) {
+        const range = overlay.range;
+
+        // Get spans within this range
+        const container = range.commonAncestorContainer;
+        const searchRoot = container.nodeType === Node.ELEMENT_NODE
+            ? container
+            : container.parentElement;
+
+        if (!searchRoot) continue;
+
+        const allSpans = Array.from(searchRoot.querySelectorAll('span[c]'));
+        const spansInRange = allSpans.filter(span => {
+            try {
+                return range.intersectsNode(span);
+            } catch {
+                return false;
+            }
+        });
+
+        if (spansInRange.length > 0) {
+            const cValues = spansInRange
+                .map(s => parseInt(s.getAttribute('c'), 10))
+                .filter(c => !isNaN(c));
+
+            if (cValues.length > 0) {
+                boundaries.push({
+                    startC: Math.min(...cValues),
+                    endC: Math.max(...cValues),
+                    firstSpan: spansInRange[0]
+                });
+            }
+        }
+    }
+
+    // Sort by position
+    boundaries.sort((a, b) => a.startC - b.startC);
+    return boundaries;
+}
+
+/**
+ * Get current playback position from highlighted word
+ */
+function getCurrentPlaybackPosition() {
+    // ElevenLabs Reader highlights the current word - try common class patterns
+    const activeWord = document.querySelector(
+        '#preview-content span.reader-highlight, ' +
+        '#preview-content span.active, ' +
+        '#preview-content span[class*="highlight"], ' +
+        '#preview-content span[class*="current"], ' +
+        '#preview-content span[style*="background"]'
+    );
+
+    if (activeWord && activeWord.hasAttribute('c')) {
+        return parseInt(activeWord.getAttribute('c'), 10);
+    }
+    return -1;
+}
+
+/**
+ * Find which block index contains or is nearest to a position
+ */
+function findBlockIndex(boundaries, position) {
+    if (boundaries.length === 0) return -1;
+    if (position < 0) return 0;
+
+    for (let i = 0; i < boundaries.length; i++) {
+        const block = boundaries[i];
+        // Position is within this block
+        if (position >= block.startC && position <= block.endC) {
+            return i;
+        }
+        // Position is before this block (we're between blocks)
+        if (position < block.startC) {
+            return i;
+        }
+    }
+    // Position is after all blocks
+    return boundaries.length - 1;
+}
+
+/**
+ * Seek audio to a specific span by simulating user interaction
+ * Uses full event sequence to ensure ElevenLabs updates highlighting
+ */
+function seekToSpan(span) {
+    if (!span) return;
+
+    const c = span.getAttribute('c');
+    Logger.log("Navigation: seeking to c=" + c);
+
+    // Try dispatching a full pointer/mouse event sequence
+    // ElevenLabs may listen for these rather than just 'click'
+    const eventOptions = {
+        bubbles: true,
+        cancelable: true,
+        view: window
+    };
+
+    // Dispatch pointer events (modern approach)
+    span.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1 }));
+    span.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1 }));
+
+    // Also dispatch mouse events for compatibility
+    span.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+    span.dispatchEvent(new MouseEvent('mouseup', eventOptions));
+    span.dispatchEvent(new MouseEvent('click', eventOptions));
+}
+
+/**
+ * Navigate between meaning blocks
+ * @param {'left'|'right'} direction
+ * @param {boolean} isDouble - true if double-press detected
+ */
+function navigateMeaningBlocks(direction, isDouble) {
+    const boundaries = getBlockBoundaries();
+
+    if (boundaries.length === 0) {
+        Logger.warn("Navigation: no meaning blocks available");
+        return;
+    }
+
+    const currentPos = getCurrentPlaybackPosition();
+    const currentIndex = findBlockIndex(boundaries, currentPos);
+
+    Logger.debug("Navigation:", { direction, isDouble, currentPos, currentIndex, totalBlocks: boundaries.length });
+
+    let targetIndex;
+
+    if (direction === 'left') {
+        if (isDouble) {
+            // Double left: go to previous block
+            targetIndex = Math.max(0, currentIndex - 1);
+        } else {
+            // Single left: go to start of current block
+            targetIndex = currentIndex;
+        }
+    } else {
+        // direction === 'right'
+        if (isDouble) {
+            // Double right: skip ahead two blocks
+            targetIndex = Math.min(boundaries.length - 1, currentIndex + 2);
+        } else {
+            // Single right: go to next block
+            targetIndex = Math.min(boundaries.length - 1, currentIndex + 1);
+        }
+    }
+
+    if (targetIndex >= 0 && targetIndex < boundaries.length) {
+        seekToSpan(boundaries[targetIndex].firstSpan);
+    }
+}
+
+// Main keyboard event handler
+document.addEventListener('keydown', (e) => {
+    // Don't interfere with typing in inputs
+    const activeEl = document.activeElement;
+    const isTyping = activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.isContentEditable
+    );
+    if (isTyping) return;
+
+    // "/" key: Show translations (same as holding the 文 button)
+    if (e.key === '/') {
+        e.preventDefault();
+        setTranslationsVisibility(true);
+        return;
+    }
+
+    const now = Date.now();
+
+    // Spacebar: Play/Pause
+    if (e.code === 'Space') {
+        e.preventDefault();
+
+        const playPauseBtn = document.querySelector(
+            '[data-testid="play-pause-button"], ' +
+            '[aria-label*="Play"], [aria-label*="Pause"], ' +
+            'button[class*="play"], button[class*="pause"], ' +
+            '.player-controls button, ' +
+            '[class*="PlayPause"], [class*="playPause"]'
+        );
+
+        if (playPauseBtn) {
+            playPauseBtn.click();
+            Logger.log("Spacebar: toggled play/pause");
+        } else {
+            Logger.warn("Spacebar: could not find play/pause button");
+        }
+        return;
+    }
+
+    // Left Arrow: Navigate to current/previous block
+    if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+
+        const isDouble = (now - lastLeftArrowTime) < DOUBLE_PRESS_THRESHOLD;
+        lastLeftArrowTime = now;
+
+        navigateMeaningBlocks('left', isDouble);
+        return;
+    }
+
+    // Right Arrow: Navigate to next block
+    if (e.code === 'ArrowRight') {
+        e.preventDefault();
+
+        const isDouble = (now - lastRightArrowTime) < DOUBLE_PRESS_THRESHOLD;
+        lastRightArrowTime = now;
+
+        navigateMeaningBlocks('right', isDouble);
+        return;
+    }
+});
+
+// Keyboard event handler for key release (for "/" translation toggle)
+document.addEventListener('keyup', (e) => {
+    // "/" key: Hide translations on release
+    if (e.key === '/') {
+        e.preventDefault();
+        setTranslationsVisibility(false);
+    }
+});
+
 // Listen for storage changes to update highlighting in real-time
 chrome.storage.onChanged.addListener((changes, namespace) => {
     Logger.log("Storage changed:", { namespace, keys: Object.keys(changes) });
