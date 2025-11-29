@@ -1133,12 +1133,16 @@ if (document.readyState === 'loading') {
 
 // --- Keyboard Navigation ---
 
-// Double-press detection state
-let lastLeftArrowTime = 0;
-let lastRightArrowTime = 0;
-let lastShiftLeftArrowTime = 0;
-let lastShiftRightArrowTime = 0;
 const DOUBLE_PRESS_THRESHOLD = 300; // ms
+
+// Navigation state for accumulated rapid presses
+// Tracks: last press time, accumulated press count, base block index at first press
+let navState = {
+    left: { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null },
+    right: { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null },
+    shiftLeft: { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null },
+    shiftRight: { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null }
+};
 
 /**
  * Get all meaning block boundaries sorted by position
@@ -1257,11 +1261,11 @@ function seekToSpan(span) {
 }
 
 /**
- * Navigate between meaning blocks
+ * Navigate between meaning blocks with accumulated rapid-press support
  * @param {'left'|'right'} direction
- * @param {boolean} isDouble - true if double-press detected
+ * @param {Object} state - navigation state object for this key
  */
-function navigateMeaningBlocks(direction, isDouble) {
+function navigateMeaningBlocks(direction, state) {
     const boundaries = getBlockBoundaries();
 
     if (boundaries.length === 0) {
@@ -1269,35 +1273,52 @@ function navigateMeaningBlocks(direction, isDouble) {
         return;
     }
 
-    const currentPos = getCurrentPlaybackPosition();
-    const currentIndex = findBlockIndex(boundaries, currentPos);
+    const now = Date.now();
+    const isRapidPress = (now - state.lastTime) < DOUBLE_PRESS_THRESHOLD;
 
-    Logger.debug("Navigation:", { direction, isDouble, currentPos, currentIndex, totalBlocks: boundaries.length });
+    // Cancel any pending seek - we're updating the target
+    if (state.seekTimer) {
+        clearTimeout(state.seekTimer);
+        state.seekTimer = null;
+    }
 
-    let targetIndex;
-
-    if (direction === 'left') {
-        if (isDouble) {
-            // Double left: go to previous block
-            targetIndex = Math.max(0, currentIndex - 1);
-        } else {
-            // Single left: go to start of current block
-            targetIndex = currentIndex;
-        }
+    if (isRapidPress && state.count > 0) {
+        // Rapid press: increment count, keep same base index
+        state.count++;
     } else {
-        // direction === 'right'
-        if (isDouble) {
-            // Double right: skip ahead two blocks
-            targetIndex = Math.min(boundaries.length - 1, currentIndex + 2);
-        } else {
-            // Single right: go to next block
-            targetIndex = Math.min(boundaries.length - 1, currentIndex + 1);
-        }
+        // New navigation sequence: capture current position as base
+        const currentPos = getCurrentPlaybackPosition();
+        state.baseIndex = findBlockIndex(boundaries, currentPos);
+        state.count = 1;
+    }
+    state.lastTime = now;
+
+    // Calculate target based on accumulated presses from the base position
+    let targetIndex;
+    if (direction === 'left') {
+        // Left: 1st press = start of current (base), 2nd = 1 back, 3rd = 2 back, etc.
+        targetIndex = Math.max(0, state.baseIndex - (state.count - 1));
+    } else {
+        // Right: 1st press = next block, 2nd = 2 forward, 3rd = 3 forward, etc.
+        targetIndex = Math.min(boundaries.length - 1, state.baseIndex + state.count);
     }
 
-    if (targetIndex >= 0 && targetIndex < boundaries.length) {
-        seekToSpan(boundaries[targetIndex].firstSpan);
-    }
+    Logger.debug("Navigation:", {
+        direction,
+        pressCount: state.count,
+        baseIndex: state.baseIndex,
+        targetIndex,
+        totalBlocks: boundaries.length
+    });
+
+    // Debounce the actual seek to prevent audio snippets during rapid pressing
+    // Only execute the seek after the threshold expires without another press
+    state.seekTimer = setTimeout(() => {
+        if (targetIndex >= 0 && targetIndex < boundaries.length) {
+            seekToSpan(boundaries[targetIndex].firstSpan);
+        }
+        state.seekTimer = null;
+    }, DOUBLE_PRESS_THRESHOLD);
 }
 
 /**
@@ -1341,11 +1362,11 @@ function getSentenceBoundaries() {
 }
 
 /**
- * Navigate between sentences
+ * Navigate between sentences with accumulated rapid-press support
  * @param {'left'|'right'} direction
- * @param {boolean} isDouble - true if double-press detected
+ * @param {Object} state - navigation state object for this key
  */
-function navigateSentences(direction, isDouble) {
+function navigateSentences(direction, state) {
     const boundaries = getSentenceBoundaries();
 
     if (boundaries.length === 0) {
@@ -1353,35 +1374,51 @@ function navigateSentences(direction, isDouble) {
         return;
     }
 
-    const currentPos = getCurrentPlaybackPosition();
-    const currentIndex = findBlockIndex(boundaries, currentPos);
+    const now = Date.now();
+    const isRapidPress = (now - state.lastTime) < DOUBLE_PRESS_THRESHOLD;
 
-    Logger.debug("Sentence navigation:", { direction, isDouble, currentPos, currentIndex, totalSentences: boundaries.length });
+    // Cancel any pending seek - we're updating the target
+    if (state.seekTimer) {
+        clearTimeout(state.seekTimer);
+        state.seekTimer = null;
+    }
 
-    let targetIndex;
-
-    if (direction === 'left') {
-        if (isDouble) {
-            // Double left: go to previous sentence
-            targetIndex = Math.max(0, currentIndex - 1);
-        } else {
-            // Single left: go to start of current sentence
-            targetIndex = currentIndex;
-        }
+    if (isRapidPress && state.count > 0) {
+        // Rapid press: increment count, keep same base index
+        state.count++;
     } else {
-        // direction === 'right'
-        if (isDouble) {
-            // Double right: skip ahead two sentences
-            targetIndex = Math.min(boundaries.length - 1, currentIndex + 2);
-        } else {
-            // Single right: go to next sentence
-            targetIndex = Math.min(boundaries.length - 1, currentIndex + 1);
-        }
+        // New navigation sequence: capture current position as base
+        const currentPos = getCurrentPlaybackPosition();
+        state.baseIndex = findBlockIndex(boundaries, currentPos);
+        state.count = 1;
+    }
+    state.lastTime = now;
+
+    // Calculate target based on accumulated presses from the base position
+    let targetIndex;
+    if (direction === 'left') {
+        // Left: 1st press = start of current (base), 2nd = 1 back, 3rd = 2 back, etc.
+        targetIndex = Math.max(0, state.baseIndex - (state.count - 1));
+    } else {
+        // Right: 1st press = next sentence, 2nd = 2 forward, 3rd = 3 forward, etc.
+        targetIndex = Math.min(boundaries.length - 1, state.baseIndex + state.count);
     }
 
-    if (targetIndex >= 0 && targetIndex < boundaries.length) {
-        seekToSpan(boundaries[targetIndex].firstSpan);
-    }
+    Logger.debug("Sentence navigation:", {
+        direction,
+        pressCount: state.count,
+        baseIndex: state.baseIndex,
+        targetIndex,
+        totalSentences: boundaries.length
+    });
+
+    // Debounce the actual seek to prevent audio snippets during rapid pressing
+    state.seekTimer = setTimeout(() => {
+        if (targetIndex >= 0 && targetIndex < boundaries.length) {
+            seekToSpan(boundaries[targetIndex].firstSpan);
+        }
+        state.seekTimer = null;
+    }, DOUBLE_PRESS_THRESHOLD);
 }
 
 // Main keyboard event handler
@@ -1401,8 +1438,6 @@ document.addEventListener('keydown', (e) => {
         setTranslationsVisibility(true);
         return;
     }
-
-    const now = Date.now();
 
     // Spacebar: Play/Pause
     if (e.code === 'Space') {
@@ -1456,44 +1491,28 @@ document.addEventListener('keydown', (e) => {
     // Shift+Left Arrow: Navigate to current/previous sentence
     if (e.shiftKey && e.code === 'ArrowLeft') {
         e.preventDefault();
-
-        const isDouble = (now - lastShiftLeftArrowTime) < DOUBLE_PRESS_THRESHOLD;
-        lastShiftLeftArrowTime = now;
-
-        navigateSentences('left', isDouble);
+        navigateSentences('left', navState.shiftLeft);
         return;
     }
 
     // Shift+Right Arrow: Navigate to next sentence
     if (e.shiftKey && e.code === 'ArrowRight') {
         e.preventDefault();
-
-        const isDouble = (now - lastShiftRightArrowTime) < DOUBLE_PRESS_THRESHOLD;
-        lastShiftRightArrowTime = now;
-
-        navigateSentences('right', isDouble);
+        navigateSentences('right', navState.shiftRight);
         return;
     }
 
     // Left Arrow: Navigate to current/previous block
     if (e.code === 'ArrowLeft') {
         e.preventDefault();
-
-        const isDouble = (now - lastLeftArrowTime) < DOUBLE_PRESS_THRESHOLD;
-        lastLeftArrowTime = now;
-
-        navigateMeaningBlocks('left', isDouble);
+        navigateMeaningBlocks('left', navState.left);
         return;
     }
 
     // Right Arrow: Navigate to next block
     if (e.code === 'ArrowRight') {
         e.preventDefault();
-
-        const isDouble = (now - lastRightArrowTime) < DOUBLE_PRESS_THRESHOLD;
-        lastRightArrowTime = now;
-
-        navigateMeaningBlocks('right', isDouble);
+        navigateMeaningBlocks('right', navState.right);
         return;
     }
 });
