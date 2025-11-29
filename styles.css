@@ -94,36 +94,38 @@
     /* Small gap/margin effect via slight size reduction */
     margin-left: 1px;
     margin-right: 1px;
+    /* Offset underline down from text baseline */
+    margin-top: 5px;
 }
 
 /* Segment type specific colors - applied via data attribute */
-/* Background colors removed - only keeping border-bottom for subtle indication */
+/* Fine dotted underlines, lighter and semi-transparent */
 .clause-debug-highlight[data-type="Section"] {
-    border-bottom: 2px solid rgba(156, 39, 176, 0.8);
+    border-bottom: 1.5px dotted rgba(156, 39, 176, 0.6);
 }
 .clause-debug-highlight[data-type="Paragraph"] {
-    border-bottom: 2px solid rgba(63, 81, 181, 0.8);
+    border-bottom: 1.5px dotted rgba(63, 81, 181, 0.6);
 }
 .clause-debug-highlight[data-type="Sentence"] {
-    border-bottom: 2px solid rgba(33, 150, 243, 0.8);
+    border-bottom: 1.5px dotted rgba(33, 150, 243, 0.6);
 }
 .clause-debug-highlight[data-type="Clause"] {
-    border-bottom: 2px solid rgba(0, 188, 212, 0.8);
+    border-bottom: 1.5px dotted rgba(0, 188, 212, 0.6);
 }
 .clause-debug-highlight[data-type="Phrase"] {
-    border-bottom: 2px solid rgba(76, 175, 80, 0.8);
+    border-bottom: 1.5px dotted rgba(76, 175, 80, 0.6);
 }
 .clause-debug-highlight[data-type="Collocation"] {
-    border-bottom: 2px solid rgba(255, 193, 7, 0.8);
+    border-bottom: 1.5px dotted rgba(255, 193, 7, 0.6);
 }
 .clause-debug-highlight[data-type="Verbs"] {
-    border-bottom: 2px solid rgba(255, 87, 34, 0.8);
+    border-bottom: 1.5px dotted rgba(255, 87, 34, 0.6);
 }
 .clause-debug-highlight[data-type="Proper Nouns"] {
-    border-bottom: 2px solid rgba(233, 30, 99, 0.8);
+    border-bottom: 1.5px dotted rgba(233, 30, 99, 0.6);
 }
 .clause-debug-highlight[data-type="Word"] {
-    border-bottom: 2px solid rgba(158, 158, 158, 0.8);
+    border-bottom: 1.5px dotted rgba(158, 158, 158, 0.6);
 }
 
 /* Hide highlighting by default, show when toggle is on */

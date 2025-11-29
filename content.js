@@ -84,7 +84,8 @@ const CONFIG = {
     debugClauses: true, // For debug logging
     testingMode: false, // Default to false - use live LLM
     currentSegmentationType: 'Clause', // Default segmentation type
-    individualTranslations: true // Default true - hover to reveal individual translations
+    individualTranslations: true, // Default true - hover to reveal individual translations
+    limitSingleParagraph: false // When true, only process the first paragraph (saves API calls during testing)
 };
 
 // Removed multi-type segmentation constants - now using single Meaning Blocks approach
@@ -974,10 +975,13 @@ async function processParagraphs() {
     if (!contentDiv) return;
 
     const paragraphs = Array.from(contentDiv.querySelectorAll('p'));
-    // Only process first paragraph to minimize API costs
-    const unprocessed = paragraphs
-        .filter(p => !p._fullResponse && p.textContent.trim().length > 0)
-        .slice(0, 1);
+    let unprocessed = paragraphs
+        .filter(p => !p._fullResponse && p.textContent.trim().length > 0);
+
+    // Apply single paragraph limit if enabled (debug feature to save API calls)
+    if (CONFIG.limitSingleParagraph) {
+        unprocessed = unprocessed.slice(0, 1);
+    }
 
     if (unprocessed.length === 0) return;
 
@@ -985,6 +989,7 @@ async function processParagraphs() {
     isProcessing = true;
     showProcessingBanner();
 
+    // Process paragraphs sequentially (one LLM call at a time)
     for (let i = 0; i < unprocessed.length; i++) {
         const p = unprocessed[i];
 
@@ -993,7 +998,7 @@ async function processParagraphs() {
 
         if (wordMap.words.length > 0) {
             // Use position-based flow
-            Logger.debug(`Processing paragraph ${i} with position-based mapping (${wordMap.words.length} words)`);
+            Logger.debug(`Processing paragraph ${i + 1}/${unprocessed.length} with position-based mapping (${wordMap.words.length} words)`);
 
             try {
                 const responseData = await fetchMeaningBlocks(wordMap);
@@ -1014,6 +1019,8 @@ async function processParagraphs() {
 
                 if (mapped.length > 0) {
                     renderSegmentations(p, mapped);
+                    // Enable toggle button as soon as first paragraph has translations
+                    enableToggleButtonIfReady();
                 } else if (blocks.length > 0) {
                     Logger.warn("No blocks mapped - check c values match between mock data and DOM");
                     showTestingModePanel(blocks);
@@ -1034,6 +1041,22 @@ async function processParagraphs() {
 
     isProcessing = false;
     hideProcessingBanner();
+}
+
+/**
+ * Enables the toggle button once translations are available.
+ * Called after each paragraph is processed successfully.
+ */
+function enableToggleButtonIfReady() {
+    // Check if we have any active overlays with translations
+    if (activeOverlays.length > 0) {
+        const btn = document.getElementById('elevenlabs-translator-toggle');
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.add('ready');
+            Logger.log("Toggle button enabled - translations ready");
+        }
+    }
 }
 
 function applyDoubleSpacing(contentDiv) {
@@ -1067,10 +1090,11 @@ function updateHighlightingVisibility(partitioningEnabled) {
 }
 
 function init() {
-    chrome.storage.sync.get(['enabled', 'testingMode', 'partitioningEnabled', 'individualTranslations'], (result) => {
+    chrome.storage.sync.get(['enabled', 'testingMode', 'partitioningEnabled', 'individualTranslations', 'limitSingleParagraph'], (result) => {
         if (result.enabled === false) return;
-        CONFIG.testingMode = result.testingMode !== false; // Default true
+        CONFIG.testingMode = result.testingMode === true; // Default false (live mode)
         CONFIG.individualTranslations = result.individualTranslations !== false; // Default true
+        CONFIG.limitSingleParagraph = result.limitSingleParagraph === true; // Default false (process all paragraphs)
 
         const contentDiv = document.getElementById('preview-content');
         if (!contentDiv) {
