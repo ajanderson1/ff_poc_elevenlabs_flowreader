@@ -83,7 +83,8 @@ const CONFIG = {
     enabled: true,
     debugClauses: true, // For debug logging
     testingMode: false, // Default to false - use live LLM
-    currentSegmentationType: 'Clause' // Default segmentation type
+    currentSegmentationType: 'Clause', // Default segmentation type
+    individualTranslations: true // Default true - hover to reveal individual translations
 };
 
 // Removed multi-type segmentation constants - now using single Meaning Blocks approach
@@ -501,13 +502,73 @@ function clearOverlays(p) {
     });
 }
 
+/**
+ * Shows an individual translation overlay on hover (when feature is enabled)
+ * @param {object} overlayData - The overlay data from activeOverlays
+ */
+function showIndividualTranslation(overlayData) {
+    if (!CONFIG.individualTranslations) return;
+    if (translationsVisible) return; // Don't interfere when all translations are shown
+
+    // Show this overlay
+    overlayData.overlayElement.classList.add('elt-individual-visible');
+
+    // Show and highlight the underline
+    if (overlayData.debugElement) {
+        overlayData.debugElement.classList.add('elt-individual-visible');
+        const highlights = overlayData.debugElement.querySelectorAll('.clause-debug-highlight');
+        highlights.forEach(h => h.classList.add('elt-hovered'));
+    }
+}
+
+/**
+ * Hides an individual translation overlay on mouse leave
+ * @param {object} overlayData - The overlay data from activeOverlays
+ */
+function hideIndividualTranslation(overlayData) {
+    if (!CONFIG.individualTranslations) return;
+    if (translationsVisible) return; // Don't interfere when all translations are shown
+
+    // Hide this overlay
+    overlayData.overlayElement.classList.remove('elt-individual-visible');
+
+    // Hide and un-highlight the underline
+    if (overlayData.debugElement) {
+        overlayData.debugElement.classList.remove('elt-individual-visible');
+        const highlights = overlayData.debugElement.querySelectorAll('.clause-debug-highlight');
+        highlights.forEach(h => h.classList.remove('elt-hovered'));
+    }
+}
+
+/**
+ * Sets up mouseenter/mouseleave listeners for hover-to-reveal functionality
+ * @param {HTMLSpanElement[]} spans - The spans that make up this meaning block
+ * @param {object} overlayData - The overlay data to show/hide on hover
+ */
+function setupHoverListeners(spans, overlayData) {
+    spans.forEach(span => {
+        span.addEventListener('mouseenter', () => {
+            showIndividualTranslation(overlayData);
+        });
+
+        span.addEventListener('mouseleave', (e) => {
+            // Check if we're moving to another span in the same block
+            const relatedTarget = e.relatedTarget;
+            if (relatedTarget && spans.includes(relatedTarget)) {
+                return; // Don't hide when moving within the same block
+            }
+            hideIndividualTranslation(overlayData);
+        });
+    });
+}
+
 function renderSegmentations(p, alignedSegments) {
     Logger.log("renderSegmentations called with", alignedSegments.length, "segments");
     clearOverlays(p);
     p._translationOverlays = [];
 
     alignedSegments.forEach((item, index) => {
-        const { segment, range } = item;
+        const { segment, range, spans } = item;
         Logger.log(`Creating overlay ${index}:`, segment.type, segment.translation?.substring(0, 30));
 
         // 1. Translation Overlay Container (multi-line support)
@@ -523,14 +584,22 @@ function renderSegmentations(p, alignedSegments) {
         document.body.appendChild(debugEl);
         p._translationOverlays.push(debugEl);
 
-        activeOverlays.push({
+        const overlayData = {
             range,
             overlayElement: overlayContainer,
             debugElement: debugEl,
             type: segment.type,
             colorIndex: index % SEGMENT_COLOR_PALETTE.length,
-            translation: segment.translation  // Store for use in updateOverlayPositions
-        });
+            translation: segment.translation,
+            spans: spans || []  // Store spans for hover detection
+        };
+
+        activeOverlays.push(overlayData);
+
+        // Setup hover listeners for individual translation reveal
+        if (spans && spans.length > 0) {
+            setupHoverListeners(spans, overlayData);
+        }
     });
 
     requestAnimationFrame(updateOverlayPositions);
@@ -998,9 +1067,10 @@ function updateHighlightingVisibility(partitioningEnabled) {
 }
 
 function init() {
-    chrome.storage.sync.get(['enabled', 'testingMode', 'partitioningEnabled'], (result) => {
+    chrome.storage.sync.get(['enabled', 'testingMode', 'partitioningEnabled', 'individualTranslations'], (result) => {
         if (result.enabled === false) return;
         CONFIG.testingMode = result.testingMode !== false; // Default true
+        CONFIG.individualTranslations = result.individualTranslations !== false; // Default true
 
         const contentDiv = document.getElementById('preview-content');
         if (!contentDiv) {
@@ -1413,15 +1483,21 @@ document.addEventListener('keyup', (e) => {
     }
 });
 
-// Listen for storage changes to update highlighting in real-time
+// Listen for storage changes to update settings in real-time
 chrome.storage.onChanged.addListener((changes, namespace) => {
     Logger.log("Storage changed:", { namespace, keys: Object.keys(changes) });
-    if (namespace === 'sync' && changes.partitioningEnabled) {
-        Logger.log("partitioningEnabled changed:", changes.partitioningEnabled.newValue);
-        updateHighlightingVisibility(changes.partitioningEnabled.newValue);
-        // Re-render with new setting
-        Logger.log("Calling reRenderAll...");
-        reRenderAll();
+    if (namespace === 'sync') {
+        if (changes.partitioningEnabled) {
+            Logger.log("partitioningEnabled changed:", changes.partitioningEnabled.newValue);
+            updateHighlightingVisibility(changes.partitioningEnabled.newValue);
+            // Re-render with new setting
+            Logger.log("Calling reRenderAll...");
+            reRenderAll();
+        }
+        if (changes.individualTranslations) {
+            Logger.log("individualTranslations changed:", changes.individualTranslations.newValue);
+            CONFIG.individualTranslations = changes.individualTranslations.newValue !== false;
+        }
     }
 });
 
