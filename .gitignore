@@ -1,2 +1,7 @@
+# Directories to ignore
+example/
+.claude/
+PRPs/
 
-example
+# macOS
+.DS_Store

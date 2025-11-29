@@ -23,6 +23,56 @@ const Logger = {
                 console.error(LOG_PREFIX, msg, err?.message || err);
             }
         }
+    },
+    /**
+     * Outputs standardized training data for prompt refinement.
+     * Shows both pipe-separated format and detailed breakdown.
+     * @param {object} wordMap - The word map with {words: [{c, text}]}
+     * @param {object} responseData - The LLM response with {blocks: [...]}
+     */
+    trainingOutput(wordMap, responseData) {
+        if (!this._enabled || !CONFIG.debugClauses) return;
+
+        const fullText = wordMap.words.map(w => w.text).join(' ');
+        const blocks = responseData.blocks || [];
+
+        // Pipe-separated format
+        const partitioned = blocks.map(b => b.original).join(' | ');
+
+        // Detailed format
+        const separator = '═'.repeat(60);
+        const lines = [
+            '',
+            separator,
+            '📝 PARTITIONING TRAINING DATA',
+            separator,
+            '',
+            '▶ ORIGINAL TEXT:',
+            fullText,
+            '',
+            '▶ PARTITIONING RESULT:',
+        ];
+
+        blocks.forEach((block, i) => {
+            lines.push(`  [${i + 1}] "${block.original}" → "${block.translation}"`);
+        });
+
+        lines.push('');
+        lines.push('▶ COPYABLE JSON (for corrections):');
+        lines.push(JSON.stringify({ blocks: blocks.map(b => ({
+            original: b.original,
+            translation: b.translation
+        }))}, null, 2));
+        lines.push('');
+        lines.push(separator);
+
+        // Output pipe format as main log line
+        console.log(`${LOG_PREFIX} [TRAINING] ${partitioned}`);
+
+        // Output detailed format in collapsed group
+        console.groupCollapsed(`${LOG_PREFIX} [TRAINING DETAILS]`);
+        console.log(lines.join('\n'));
+        console.groupEnd();
     }
 };
 
@@ -32,7 +82,7 @@ Logger.log("Content script loaded.");
 const CONFIG = {
     enabled: true,
     debugClauses: true, // For debug logging
-    testingMode: true, // Default to true
+    testingMode: false, // Default to false - use live LLM
     currentSegmentationType: 'Clause' // Default segmentation type
 };
 
@@ -52,6 +102,7 @@ const SEGMENT_COLOR_PALETTE = [
 
 // --- State ---
 let isProcessing = false;
+let hasProcessedInitially = false; // Ensures LLM call only happens once per page load
 let activeOverlays = []; // Stores { range, overlayElement, debugElement, type }
 
 // --- Text Extraction & Tokenization ---
@@ -159,35 +210,67 @@ function extractWordMap(paragraph, paragraphIndex) {
 
 /**
  * Maps LLM translation segments back to DOM spans using c values.
+ * Uses the 'original' text field to determine word count, falling back to end_c if unavailable.
+ * This is more reliable than trusting end_c which may be miscalculated by the LLM.
  * @param {{ words: Array<{c: number, text: string, spanElement: HTMLSpanElement}> }} wordMap
- * @param {Array<{start_c: number, end_c: number, translation: string, type: string}>} segments
+ * @param {Array<{start_c: number, end_c: number, original: string, translation: string, type: string}>} segments
  * @returns {Array<{segment: object, spans: HTMLSpanElement[], range: Range}>}
  */
 function mapSegmentsToSpans(wordMap, segments) {
     const mapped = [];
 
     for (const segment of segments) {
-        const { start_c, end_c, translation, type } = segment;
+        const { start_c, end_c, original, translation, type } = segment;
 
-        // Validate that start_c and end_c exist in our word map
-        const validCs = new Set(wordMap.words.map(w => w.c));
-        if (!validCs.has(start_c) || !validCs.has(end_c)) {
-            Logger.warn("Invalid segment positions:", { start_c, end_c },
-                "Valid c values:", Array.from(validCs).slice(0, 10), "...");
+        // Find the starting word index
+        const startIdx = wordMap.words.findIndex(w => w.c === start_c);
+        if (startIdx === -1) {
+            Logger.warn("Invalid start_c:", start_c);
             continue;
         }
 
-        // Find all words in range [start_c, end_c]
-        const spansInRange = wordMap.words.filter(w => w.c >= start_c && w.c <= end_c);
+        // Strategy: Use 'original' text to determine how many words to include
+        // This is more reliable than trusting end_c which may be miscalculated
+        let spansInRange;
+
+        if (original) {
+            // Normalize LLM's original text for comparison
+            const originalWords = original.trim().split(/\s+/);
+            const expectedWordCount = originalWords.length;
+
+            // Take the expected number of words starting from startIdx
+            spansInRange = wordMap.words.slice(startIdx, startIdx + expectedWordCount);
+
+            // Validate we got the right text
+            const capturedText = spansInRange.map(s => s.text).join(' ');
+            const normalizedOriginal = originalWords.join(' ');
+
+            if (capturedText.toLowerCase() !== normalizedOriginal.toLowerCase()) {
+                Logger.debug("Text mismatch after word-count mapping:",
+                    { original: normalizedOriginal, captured: capturedText, start_c, end_c });
+            }
+        } else {
+            // Fallback to end_c-based mapping if no original text
+            const endIdx = wordMap.words.findIndex(w => w.c === end_c);
+            if (endIdx === -1 || endIdx < startIdx) {
+                Logger.warn("Invalid end_c or order:", { start_c, end_c });
+                continue;
+            }
+            spansInRange = wordMap.words.slice(startIdx, endIdx + 1);
+        }
+
         if (spansInRange.length === 0) {
             Logger.warn("No spans found for segment:", { start_c, end_c, translation });
             continue;
         }
 
+        const firstSpan = spansInRange[0].spanElement;
+        const lastSpan = spansInRange[spansInRange.length - 1].spanElement;
+
         // Create Range for positioning
         const range = document.createRange();
-        range.setStartBefore(spansInRange[0].spanElement);
-        range.setEndAfter(spansInRange[spansInRange.length - 1].spanElement);
+        range.setStartBefore(firstSpan);
+        range.setEndAfter(lastSpan);
 
         mapped.push({
             segment: {
@@ -765,17 +848,65 @@ function setTranslationsVisibility(visible) {
 
 // --- Main Logic ---
 
+/**
+ * Shows a temporary error notification to the user.
+ * @param {string} message - Error message to display
+ */
+function showErrorNotification(message) {
+    // Remove existing notification if any
+    const existing = document.getElementById('elevenlabs-error-notification');
+    if (existing) existing.remove();
+
+    const notification = document.createElement('div');
+    notification.id = 'elevenlabs-error-notification';
+    notification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        max-width: 350px;
+        padding: 15px 20px;
+        background: #f44336;
+        color: white;
+        border-radius: 8px;
+        font-family: sans-serif;
+        font-size: 14px;
+        z-index: 10001;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        cursor: pointer;
+    `;
+
+    notification.innerHTML = `
+        <strong>Translation Error</strong><br>
+        <span style="font-size: 12px;">${message}</span>
+        <div style="font-size: 11px; margin-top: 8px; opacity: 0.8;">Click to dismiss</div>
+    `;
+
+    notification.onclick = () => notification.remove();
+
+    // Auto-remove after 10 seconds
+    setTimeout(() => {
+        if (notification.parentNode) notification.remove();
+    }, 10000);
+
+    document.body.appendChild(notification);
+}
+
 async function processParagraphs() {
+    if (hasProcessedInitially) return; // Only process once per page load
     if (isProcessing) return;
 
     const contentDiv = document.getElementById('preview-content');
     if (!contentDiv) return;
 
     const paragraphs = Array.from(contentDiv.querySelectorAll('p'));
-    const unprocessed = paragraphs.filter(p => !p._fullResponse && p.textContent.trim().length > 0);
+    // Only process first paragraph to minimize API costs
+    const unprocessed = paragraphs
+        .filter(p => !p._fullResponse && p.textContent.trim().length > 0)
+        .slice(0, 1);
 
     if (unprocessed.length === 0) return;
 
+    hasProcessedInitially = true; // Set immediately - only one LLM call attempt per page load
     isProcessing = true;
     showProcessingBanner();
 
@@ -813,12 +944,12 @@ async function processParagraphs() {
                     showTestingModePanel(blocks);
                 }
 
-                if (CONFIG.debugClauses) {
-                    Logger.debug("LLM Response for paragraph:", wordMap.words.slice(0, 3).map(w => w.text).join(' ') + "...", responseData);
-                }
+                // Output standardized training data for prompt refinement
+                Logger.trainingOutput(wordMap, responseData);
 
             } catch (err) {
                 Logger.error("Position-based translation failed:", err);
+                showErrorNotification(err.message);
             }
         } else {
             // Only position-based partitioning is supported
@@ -882,11 +1013,10 @@ function init() {
         injectProcessingBanner();
         injectToggleButton();
 
-        // Observer
+        // Observer - only for styling, NOT for triggering LLM calls
         const observer = new MutationObserver((mutations) => {
             // Apply double-spacing to any newly added paragraphs
             applyDoubleSpacing(contentDiv);
-            processParagraphs();
         });
         observer.observe(contentDiv, { childList: true, subtree: true });
 
@@ -906,6 +1036,8 @@ if (document.readyState === 'loading') {
 // Double-press detection state
 let lastLeftArrowTime = 0;
 let lastRightArrowTime = 0;
+let lastShiftLeftArrowTime = 0;
+let lastShiftRightArrowTime = 0;
 const DOUBLE_PRESS_THRESHOLD = 300; // ms
 
 /**
@@ -1068,6 +1200,90 @@ function navigateMeaningBlocks(direction, isDouble) {
     }
 }
 
+/**
+ * Get all sentence boundaries by detecting punctuation
+ * Returns array of { startC, endC, firstSpan } objects
+ */
+function getSentenceBoundaries() {
+    const boundaries = [];
+    const paragraphs = document.querySelectorAll('#preview-content p');
+
+    paragraphs.forEach((p, pIdx) => {
+        const wordMap = extractWordMap(p, pIdx);
+        if (wordMap.words.length === 0) return;
+
+        let sentenceStart = 0;
+
+        for (let i = 0; i < wordMap.words.length; i++) {
+            const word = wordMap.words[i];
+            // Check for sentence-ending punctuation
+            if (/[.!?]$/.test(word.text)) {
+                boundaries.push({
+                    startC: wordMap.words[sentenceStart].c,
+                    endC: word.c,
+                    firstSpan: wordMap.words[sentenceStart].spanElement
+                });
+                sentenceStart = i + 1;
+            }
+        }
+
+        // Handle trailing words without punctuation
+        if (sentenceStart < wordMap.words.length) {
+            boundaries.push({
+                startC: wordMap.words[sentenceStart].c,
+                endC: wordMap.words[wordMap.words.length - 1].c,
+                firstSpan: wordMap.words[sentenceStart].spanElement
+            });
+        }
+    });
+
+    return boundaries;
+}
+
+/**
+ * Navigate between sentences
+ * @param {'left'|'right'} direction
+ * @param {boolean} isDouble - true if double-press detected
+ */
+function navigateSentences(direction, isDouble) {
+    const boundaries = getSentenceBoundaries();
+
+    if (boundaries.length === 0) {
+        Logger.warn("Sentence navigation: no sentences available");
+        return;
+    }
+
+    const currentPos = getCurrentPlaybackPosition();
+    const currentIndex = findBlockIndex(boundaries, currentPos);
+
+    Logger.debug("Sentence navigation:", { direction, isDouble, currentPos, currentIndex, totalSentences: boundaries.length });
+
+    let targetIndex;
+
+    if (direction === 'left') {
+        if (isDouble) {
+            // Double left: go to previous sentence
+            targetIndex = Math.max(0, currentIndex - 1);
+        } else {
+            // Single left: go to start of current sentence
+            targetIndex = currentIndex;
+        }
+    } else {
+        // direction === 'right'
+        if (isDouble) {
+            // Double right: skip ahead two sentences
+            targetIndex = Math.min(boundaries.length - 1, currentIndex + 2);
+        } else {
+            // Single right: go to next sentence
+            targetIndex = Math.min(boundaries.length - 1, currentIndex + 1);
+        }
+    }
+
+    if (targetIndex >= 0 && targetIndex < boundaries.length) {
+        seekToSpan(boundaries[targetIndex].firstSpan);
+    }
+}
+
 // Main keyboard event handler
 document.addEventListener('keydown', (e) => {
     // Don't interfere with typing in inputs
@@ -1092,20 +1308,70 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
         e.preventDefault();
 
-        const playPauseBtn = document.querySelector(
-            '[data-testid="play-pause-button"], ' +
-            '[aria-label*="Play"], [aria-label*="Pause"], ' +
-            'button[class*="play"], button[class*="pause"], ' +
-            '.player-controls button, ' +
-            '[class*="PlayPause"], [class*="playPause"]'
-        );
+        // Try multiple selectors for the play/pause button
+        // ElevenLabs Reader uses various button patterns
+        const selectors = [
+            '[data-testid="play-pause-button"]',
+            '[aria-label="Play"]',
+            '[aria-label="Pause"]',
+            'button[aria-label*="Play"]',
+            'button[aria-label*="Pause"]',
+            'button[class*="play" i]',
+            'button[class*="pause" i]',
+            '[class*="PlayPause"]',
+            '[class*="playPause"]',
+            // Look for SVG icons within buttons (play/pause icons)
+            'button:has(svg[class*="play" i])',
+            'button:has(svg[class*="pause" i])',
+            // Common player control patterns
+            '.player-controls button:first-child',
+            '[class*="player"] button:first-child',
+            // Generic approach: find button with play/pause in any nested element
+            'button:has([class*="Play"])',
+            'button:has([class*="Pause"])'
+        ];
+
+        let playPauseBtn = null;
+        for (const selector of selectors) {
+            try {
+                playPauseBtn = document.querySelector(selector);
+                if (playPauseBtn) {
+                    Logger.debug("Spacebar: found button with selector:", selector);
+                    break;
+                }
+            } catch (err) {
+                // :has() selector might not be supported in all contexts, ignore errors
+            }
+        }
 
         if (playPauseBtn) {
             playPauseBtn.click();
             Logger.log("Spacebar: toggled play/pause");
         } else {
-            Logger.warn("Spacebar: could not find play/pause button");
+            Logger.warn("Spacebar: could not find play/pause button. Try inspecting the page to find the correct selector.");
         }
+        return;
+    }
+
+    // Shift+Left Arrow: Navigate to current/previous sentence
+    if (e.shiftKey && e.code === 'ArrowLeft') {
+        e.preventDefault();
+
+        const isDouble = (now - lastShiftLeftArrowTime) < DOUBLE_PRESS_THRESHOLD;
+        lastShiftLeftArrowTime = now;
+
+        navigateSentences('left', isDouble);
+        return;
+    }
+
+    // Shift+Right Arrow: Navigate to next sentence
+    if (e.shiftKey && e.code === 'ArrowRight') {
+        e.preventDefault();
+
+        const isDouble = (now - lastShiftRightArrowTime) < DOUBLE_PRESS_THRESHOLD;
+        lastShiftRightArrowTime = now;
+
+        navigateSentences('right', isDouble);
         return;
     }
 

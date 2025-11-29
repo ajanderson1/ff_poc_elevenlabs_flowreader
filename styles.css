@@ -1,7 +1,21 @@
 /* Increase line height to make room for translations above each line */
+/* Remove ElevenLabs paragraph background highlighting */
 #preview-content p {
     line-height: 5 !important;
     position: relative;
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+/* Hide ElevenLabs active sentence highlighting */
+#preview-content p.active-sentence {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+/* Hide ElevenLabs highlight-box overlays */
+#preview-content .highlight-box {
+    display: none !important;
 }
 
 /* Container for the translation */
@@ -32,7 +46,7 @@
 /* Floating Toggle Button */
 #elevenlabs-translator-toggle {
     position: fixed;
-    bottom: 30px;
+    bottom: 88px;
     right: 30px;
     z-index: 10000;
     width: 60px;
@@ -83,40 +97,32 @@
 }
 
 /* Segment type specific colors - applied via data attribute */
+/* Background colors removed - only keeping border-bottom for subtle indication */
 .clause-debug-highlight[data-type="Section"] {
-    background-color: rgba(156, 39, 176, 0.35);
     border-bottom: 2px solid rgba(156, 39, 176, 0.8);
 }
 .clause-debug-highlight[data-type="Paragraph"] {
-    background-color: rgba(63, 81, 181, 0.35);
     border-bottom: 2px solid rgba(63, 81, 181, 0.8);
 }
 .clause-debug-highlight[data-type="Sentence"] {
-    background-color: rgba(33, 150, 243, 0.35);
     border-bottom: 2px solid rgba(33, 150, 243, 0.8);
 }
 .clause-debug-highlight[data-type="Clause"] {
-    background-color: rgba(0, 188, 212, 0.35);
     border-bottom: 2px solid rgba(0, 188, 212, 0.8);
 }
 .clause-debug-highlight[data-type="Phrase"] {
-    background-color: rgba(76, 175, 80, 0.35);
     border-bottom: 2px solid rgba(76, 175, 80, 0.8);
 }
 .clause-debug-highlight[data-type="Collocation"] {
-    background-color: rgba(255, 193, 7, 0.35);
     border-bottom: 2px solid rgba(255, 193, 7, 0.8);
 }
 .clause-debug-highlight[data-type="Verbs"] {
-    background-color: rgba(255, 87, 34, 0.35);
     border-bottom: 2px solid rgba(255, 87, 34, 0.8);
 }
 .clause-debug-highlight[data-type="Proper Nouns"] {
-    background-color: rgba(233, 30, 99, 0.35);
     border-bottom: 2px solid rgba(233, 30, 99, 0.8);
 }
 .clause-debug-highlight[data-type="Word"] {
-    background-color: rgba(158, 158, 158, 0.35);
     border-bottom: 2px solid rgba(158, 158, 158, 0.8);
 }
 
