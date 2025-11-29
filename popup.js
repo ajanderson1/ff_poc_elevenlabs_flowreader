@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.sync.get(['enabled', 'openaiApiKey', 'testingMode', 'partitioningEnabled'], (result) => {
     toggle.checked = result.enabled !== false; // Default true
     testingToggle.checked = result.testingMode === true; // Default false (live mode)
-    partitioningToggle.checked = result.partitioningEnabled !== false; // Default true (meaning blocks enabled)
+    partitioningToggle.checked = result.partitioningEnabled === true; // Default false (debug feature)
     if (result.openaiApiKey) {
       apiKeyInput.value = result.openaiApiKey;
     }

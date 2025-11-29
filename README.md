@@ -23,10 +23,9 @@ A Chrome extension that injects inline translations into [ElevenLabs Reader](htt
 
 Keyboard shortcuts are disabled when typing in input fields.
 
-### Visual Debugging
-- Color-coded highlighting shows meaning block boundaries
+### Visual Feedback
+- Colored underlines show meaning block boundaries when translations are visible
 - Each block gets a distinct color for easy differentiation
-- Toggle visibility via the "Enable Meaning Blocks" setting
 
 ## Installation
 
@@ -44,8 +43,8 @@ Click the extension icon to open settings:
 |---------|-------------|
 | **Enable Extension** | Master on/off toggle |
 | **Testing Mode** | Use mock data instead of API calls (for development) |
-| **Enable Meaning Blocks** | Show/hide segment highlighting |
 | **OpenAI API Key** | Required for translation (enter your `sk-...` key) |
+| **Always Show Underlines** | (Debug) Show block underlines even without translations visible |
 
 ## Usage
 

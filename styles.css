@@ -135,6 +135,11 @@ body.elt-show-highlighting .clause-debug-container {
     display: block;
 }
 
+/* Also show underlines when translations are visible */
+body.elt-translations-visible .clause-debug-container {
+    display: block;
+}
+
 /* Processing Banner */
 #elevenlabs-processing-banner {
     position: fixed;

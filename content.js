@@ -844,6 +844,12 @@ function setTranslationsVisibility(visible) {
         if (visible) el.classList.add('translation-visible');
         else el.classList.remove('translation-visible');
     });
+    // Also show/hide underlines with translations
+    if (visible) {
+        document.body.classList.add('elt-translations-visible');
+    } else {
+        document.body.classList.remove('elt-translations-visible');
+    }
 }
 
 // --- Main Logic ---
