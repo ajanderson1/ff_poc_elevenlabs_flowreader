@@ -1,15 +1,17 @@
 document.addEventListener('DOMContentLoaded', () => {
   const toggle = document.getElementById('toggle-extension');
   const testingToggle = document.getElementById('toggle-testing');
+  const individualTranslationsToggle = document.getElementById('individual-translations');
   const partitioningToggle = document.getElementById('partitioning-enabled');
   const apiKeyInput = document.getElementById('api-key');
   const saveBtn = document.getElementById('save-key');
   const statusMsg = document.getElementById('status-msg');
 
   // Load saved settings
-  chrome.storage.sync.get(['enabled', 'openaiApiKey', 'testingMode', 'partitioningEnabled'], (result) => {
+  chrome.storage.sync.get(['enabled', 'openaiApiKey', 'testingMode', 'individualTranslations', 'partitioningEnabled'], (result) => {
     toggle.checked = result.enabled !== false; // Default true
     testingToggle.checked = result.testingMode === true; // Default false (live mode)
+    individualTranslationsToggle.checked = result.individualTranslations !== false; // Default true
     partitioningToggle.checked = result.partitioningEnabled === true; // Default false (debug feature)
     if (result.openaiApiKey) {
       apiKeyInput.value = result.openaiApiKey;
@@ -24,6 +26,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Save testing state
   testingToggle.addEventListener('change', () => {
     chrome.storage.sync.set({ testingMode: testingToggle.checked });
+  });
+
+  // Save individual translations state
+  individualTranslationsToggle.addEventListener('change', () => {
+    chrome.storage.sync.set({ individualTranslations: individualTranslationsToggle.checked });
   });
 
   // Save partitioning enabled state

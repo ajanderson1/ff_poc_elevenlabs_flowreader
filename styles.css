@@ -256,3 +256,41 @@ html.light .translation-line,
 html[data-theme="light"] .translation-line {
     color: #6366f1;
 }
+
+/* Individual hover-to-reveal styles */
+
+/* Show individual translation overlay when hovered */
+.translation-overlay-container.elt-individual-visible {
+    display: block !important;
+}
+
+/* Show individual underline container when hovered */
+.clause-debug-container.elt-individual-visible {
+    display: block !important;
+}
+
+/* Darker underline when meaning block is hovered */
+.clause-debug-highlight.elt-hovered {
+    border-bottom-color: #333 !important;
+    border-bottom-width: 3px !important;
+}
+
+/* Dark mode support for hover underline */
+@media (prefers-color-scheme: dark) {
+    .clause-debug-highlight.elt-hovered {
+        border-bottom-color: #fff !important;
+    }
+}
+
+body.dark .clause-debug-highlight.elt-hovered,
+body.dark-mode .clause-debug-highlight.elt-hovered,
+body[data-theme="dark"] .clause-debug-highlight.elt-hovered,
+html.dark .clause-debug-highlight.elt-hovered,
+html[data-theme="dark"] .clause-debug-highlight.elt-hovered {
+    border-bottom-color: #fff !important;
+}
+
+/* Cursor pointer on hoverable meaning blocks */
+#preview-content span[c] {
+    cursor: pointer;
+}
