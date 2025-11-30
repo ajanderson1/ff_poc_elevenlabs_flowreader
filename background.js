@@ -1,5 +1,72 @@
 // Background script for ElevenLabs Translator
 
+// --- Cache Configuration ---
+const CACHE_PREFIX = 'translation_cache_';
+const CACHE_VERSION = 1;
+
+/**
+ * Generates a cache key for a given URL.
+ * @param {string} url - The page URL
+ * @returns {string} Cache key
+ */
+function getCacheKey(url) {
+    return CACHE_PREFIX + url;
+}
+
+/**
+ * Retrieves cached translations for a URL.
+ * @param {string} url - The page URL
+ * @returns {Promise<object|null>} Cached data or null if not found
+ */
+async function getCachedTranslations(url) {
+    const key = getCacheKey(url);
+    const result = await chrome.storage.local.get([key]);
+    const cached = result[key];
+
+    if (cached && cached.version === CACHE_VERSION) {
+        console.log('ElevenLabs Translator: Cache hit for', url);
+        return cached;
+    }
+    return null;
+}
+
+/**
+ * Stores translations in the cache.
+ * @param {string} url - The page URL
+ * @param {Array<object>} paragraphs - Array of paragraph translation data
+ */
+async function setCachedTranslations(url, paragraphs) {
+    const key = getCacheKey(url);
+    const cacheData = {
+        version: CACHE_VERSION,
+        timestamp: Date.now(),
+        paragraphs: paragraphs
+    };
+
+    try {
+        await chrome.storage.local.set({ [key]: cacheData });
+        console.log('ElevenLabs Translator: Cached translations for', url);
+    } catch (error) {
+        console.warn('ElevenLabs Translator: Failed to cache translations:', error.message);
+    }
+}
+
+/**
+ * Clears all cached translations.
+ * @returns {Promise<number>} Number of cache entries cleared
+ */
+async function clearAllCachedTranslations() {
+    const allItems = await chrome.storage.local.get(null);
+    const cacheKeys = Object.keys(allItems).filter(key => key.startsWith(CACHE_PREFIX));
+
+    if (cacheKeys.length > 0) {
+        await chrome.storage.local.remove(cacheKeys);
+        console.log('ElevenLabs Translator: Cleared', cacheKeys.length, 'cached translations');
+    }
+
+    return cacheKeys.length;
+}
+
 // System prompt for Meaning Blocks partitioning
 const SYSTEM_PROMPT = `You are a French-to-English translator that segments text into meaningful blocks.
 
@@ -34,6 +101,39 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         handlePositionBasedPartitioning(request.wordData)
             .then(function(result) {
                 sendResponse({ success: true, data: result });
+            })
+            .catch(function(error) {
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
+    }
+
+    if (request.action === 'GET_CACHED_TRANSLATIONS') {
+        getCachedTranslations(request.url)
+            .then(function(cached) {
+                sendResponse({ success: true, data: cached });
+            })
+            .catch(function(error) {
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
+    }
+
+    if (request.action === 'SET_CACHED_TRANSLATIONS') {
+        setCachedTranslations(request.url, request.paragraphs)
+            .then(function() {
+                sendResponse({ success: true });
+            })
+            .catch(function(error) {
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
+    }
+
+    if (request.action === 'CLEAR_CACHE') {
+        clearAllCachedTranslations()
+            .then(function(count) {
+                sendResponse({ success: true, count: count });
             })
             .catch(function(error) {
                 sendResponse({ success: false, error: error.message });
