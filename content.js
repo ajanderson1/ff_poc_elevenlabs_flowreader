@@ -78,6 +78,81 @@ const Logger = {
 
 Logger.log("Content script loaded.");
 
+// --- Cost Logging Functions ---
+// These are always active (not tied to Debug Clauses toggle)
+
+/**
+ * Calculates OpenAI API cost from token counts.
+ * @param {number} promptTokens - Input tokens
+ * @param {number} completionTokens - Output tokens
+ * @returns {number} Cost in USD
+ */
+function calculateOpenAICost(promptTokens, completionTokens) {
+    const inputCost = (promptTokens / 1_000_000) * OPENAI_PRICING.inputPerMillion;
+    const outputCost = (completionTokens / 1_000_000) * OPENAI_PRICING.outputPerMillion;
+    return inputCost + outputCost;
+}
+
+/**
+ * Calculates estimated ElevenLabs Reader minutes from text.
+ * @param {string} text - The original text being processed
+ * @returns {number} Estimated minutes
+ */
+function calculateElevenLabsMinutes(text) {
+    const charCount = text.length;
+    return charCount / ELEVENLABS_CHARS_PER_MINUTE;
+}
+
+/**
+ * Formats a number with commas for thousands.
+ * @param {number} num - Number to format
+ * @returns {string} Formatted string
+ */
+function formatNumber(num) {
+    return num.toLocaleString();
+}
+
+/**
+ * Logs cost information for a single paragraph.
+ * Always active (not tied to Debug Clauses toggle).
+ * @param {number} paragraphIndex - Index of the paragraph (1-based)
+ * @param {string} originalText - The original text that was translated
+ * @param {number} promptTokens - Input tokens used
+ * @param {number} completionTokens - Output tokens used
+ */
+function logParagraphCost(paragraphIndex, originalText, promptTokens, completionTokens) {
+    const elevenLabsMinutes = calculateElevenLabsMinutes(originalText);
+    const openAICost = calculateOpenAICost(promptTokens, completionTokens);
+
+    // Update running totals
+    costTracker.totalElevenLabsMinutes += elevenLabsMinutes;
+    costTracker.totalOpenAICost += openAICost;
+    costTracker.totalPromptTokens += promptTokens;
+    costTracker.totalCompletionTokens += completionTokens;
+    costTracker.paragraphCount++;
+
+    // Format and log
+    console.log(
+        `${LOG_PREFIX} 📊 Paragraph ${paragraphIndex} Cost:\n` +
+        `      → ElevenLabs Reader: ${elevenLabsMinutes.toFixed(1)} min (of your subscription)\n` +
+        `      → OpenAI API: $${openAICost.toFixed(5)} (${formatNumber(promptTokens)} in / ${formatNumber(completionTokens)} out tokens)`
+    );
+}
+
+/**
+ * Logs the total cost summary after all paragraphs are processed.
+ * Always active (not tied to Debug Clauses toggle).
+ */
+function logTotalCostSummary() {
+    if (costTracker.paragraphCount === 0) return;
+
+    console.log(
+        `${LOG_PREFIX} 📊 TOTAL COST SUMMARY:\n` +
+        `      → ElevenLabs Reader: ${costTracker.totalElevenLabsMinutes.toFixed(1)} min (of your subscription)\n` +
+        `      → OpenAI API: $${costTracker.totalOpenAICost.toFixed(5)} (${formatNumber(costTracker.totalPromptTokens)} in / ${formatNumber(costTracker.totalCompletionTokens)} out tokens)`
+    );
+}
+
 // --- Configuration ---
 const CONFIG = {
     enabled: true,
@@ -102,6 +177,25 @@ const MEANING_BLOCK_COLOR = {
 let isProcessing = false;
 let hasProcessedInitially = false; // Ensures LLM call only happens once per page load
 let activeOverlays = []; // Stores { range, overlayElement, debugElement, type }
+
+// --- Cost Tracking State ---
+// Running totals for cost summary (reset per page load)
+const costTracker = {
+    totalElevenLabsMinutes: 0,
+    totalOpenAICost: 0,
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    paragraphCount: 0
+};
+
+// --- Cost Calculation Constants ---
+// GPT-4o-mini pricing (per million tokens)
+const OPENAI_PRICING = {
+    inputPerMillion: 0.15,   // $0.15 per 1M input tokens
+    outputPerMillion: 0.60   // $0.60 per 1M output tokens
+};
+// ElevenLabs Reader: ~833 characters per minute
+const ELEVENLABS_CHARS_PER_MINUTE = 833;
 
 // --- Text Extraction & Tokenization ---
 
@@ -954,15 +1048,24 @@ async function processParagraphs() {
                 // Output standardized training data for prompt refinement
                 Logger.trainingOutput(wordMap, responseData);
 
+                // Log per-paragraph cost (always active, not tied to debug toggle)
+                const originalText = wordMap.words.map(w => w.text).join(' ');
+                const tokenUsage = responseData.tokenUsage || { promptTokens: 0, completionTokens: 0 };
+                logParagraphCost(i + 1, originalText, tokenUsage.promptTokens, tokenUsage.completionTokens);
+
             } catch (err) {
                 Logger.error("Position-based translation failed:", err);
                 showErrorNotification(err.message);
+                // Note: Failed translations are NOT counted in cost totals
             }
         } else {
             // Only position-based partitioning is supported
             Logger.warn(`Paragraph ${i}: skipping - no word map available for meaning blocks`);
         }
     }
+
+    // Log total cost summary after all paragraphs are processed
+    logTotalCostSummary();
 
     isProcessing = false;
     hideProcessingBanner();
