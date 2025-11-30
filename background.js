@@ -41,24 +41,6 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         return true;
     }
 
-    if (request.action === 'GET_MOCK_DATA') {
-        fetch(chrome.runtime.getURL('mock-llm-response.json'))
-            .then(function(response) {
-                if (!response.ok) {
-                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
-                }
-                return response.json();
-            })
-            .then(function(data) {
-                sendResponse({ success: true, data: data });
-            })
-            .catch(function(error) {
-                console.error('ElevenLabs Translator: Mock data fetch error:', error);
-                sendResponse({ success: false, error: error.message });
-            });
-        return true;
-    }
-
     return false;
 });
 

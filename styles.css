@@ -1,5 +1,13 @@
 /* Increase line height to make room for translations above each line */
 /* Remove ElevenLabs paragraph background highlighting */
+
+/* Make #preview-content a stacking context so overlays are contained within it
+   and render below the fixed nav bar when scrolling */
+#preview-content {
+    position: relative;
+    isolation: isolate;  /* Creates stacking context without changing z-index */
+}
+
 #preview-content p {
     line-height: 5 !important;
     position: relative;
@@ -30,8 +38,8 @@
     pointer-events: none;
     /* Let clicks pass through to text */
     white-space: nowrap;
-    z-index: 10000;
-    /* High z-index to sit on top of everything */
+    z-index: 100;
+    /* Lower z-index to render below fixed nav bar */
     display: none;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     border: 1px solid #e0e0e0;
@@ -47,7 +55,7 @@
 #elevenlabs-translator-toggle {
     position: fixed;
     bottom: 88px;
-    right: 30px;
+    right: 60px;
     z-index: 10000;
     width: 60px;
     height: 60px;
@@ -82,7 +90,7 @@
     top: 0;
     left: 0;
     pointer-events: none;
-    z-index: 9990;
+    z-index: 99;
 }
 
 .clause-debug-highlight {
@@ -204,7 +212,7 @@
     top: 0;
     left: 0;
     pointer-events: none;
-    z-index: 10000;
+    z-index: 100;
     display: none;
 }
 

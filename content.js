@@ -82,7 +82,6 @@ Logger.log("Content script loaded.");
 const CONFIG = {
     enabled: true,
     debugClauses: true, // For debug logging
-    testingMode: false, // Default to false - use live LLM
     currentSegmentationType: 'Clause', // Default segmentation type
     individualTranslations: true, // Default true - hover to reveal individual translations
     limitSingleParagraph: false // When true, only process the first paragraph (saves API calls during testing)
@@ -288,92 +287,11 @@ function mapSegmentsToSpans(wordMap, segments) {
 // --- Translation Service ---
 
 /**
- * Adjusts mock data c values to match the actual DOM's c values.
- * The mock data uses c values from exampleDOM.html (first paragraph).
- * This function maps those to the actual page's c values using word index mapping.
- * @param {object} mockData - The mock data with blocks array
- * @param {{ words: Array<{c: number, text: string}> }} wordMap - Actual word map from DOM
- * @returns {object} Adjusted mock data with updated c values
- */
-function adjustMockDataToWordMap(mockData, wordMap) {
-    if (!mockData.blocks || !wordMap.words.length) return mockData;
-
-    // Reference c values from exampleDOM.html first paragraph (in word order)
-    // These are the c values that the mock data was created for
-    const mockParagraphCValues = [
-        1, 10, 20, 22, 30, 33, 42, 45, 55, 61, 65, 70, 74, 81,  // words 0-13
-        94, 99, 103, 109, 111, 121, 125, 136,                    // words 14-21
-        148, 154, 162, 167, 171, 175,                            // words 22-27
-        181, 184, 192, 201,                                       // words 28-31
-        211, 213, 217, 226,                                       // words 32-35
-        234, 244, 251, 259, 266, 269,                            // words 36-41
-        282, 285, 297                                             // words 42-44
-    ];
-
-    // Get actual c values from the DOM
-    const actualCValues = wordMap.words.map(w => w.c);
-
-    Logger.debug("Mock paragraph c values (first 10):", mockParagraphCValues.slice(0, 10));
-    Logger.debug("Actual c values (first 10):", actualCValues.slice(0, 10));
-
-    // Build mapping: mock c value -> word index -> actual c value
-    const mockCToIndex = {};
-    mockParagraphCValues.forEach((c, idx) => {
-        mockCToIndex[c] = idx;
-    });
-
-    const cValueMapping = {};
-    for (const mockC of Object.keys(mockCToIndex)) {
-        const wordIndex = mockCToIndex[mockC];
-        if (wordIndex < actualCValues.length) {
-            cValueMapping[mockC] = actualCValues[wordIndex];
-        }
-    }
-
-    Logger.debug("C value mapping (sample):", Object.entries(cValueMapping).slice(0, 5));
-
-    // Adjust all blocks with the new c values
-    const adjustedBlocks = mockData.blocks.map(block => ({
-        ...block,
-        start_c: cValueMapping[block.start_c] !== undefined ? cValueMapping[block.start_c] : block.start_c,
-        end_c: cValueMapping[block.end_c] !== undefined ? cValueMapping[block.end_c] : block.end_c
-    }));
-
-    Logger.debug("Adjusted blocks (first 2):", adjustedBlocks.slice(0, 2));
-
-    return { blocks: adjustedBlocks };
-}
-
-/**
  * Fetches translations using position-based mapping with c attributes.
  * @param {{ words: Array<{c: number, text: string}> }} wordMap - Word map with positions
  * @returns {Promise<object>} Translation response with start_c/end_c segments
  */
 async function fetchMeaningBlocks(wordMap) {
-    // Check if testing mode is enabled - use mock data instead of API
-    if (CONFIG.testingMode) {
-        Logger.log("Using mock data (testing mode - meaning blocks)");
-        return new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage({ action: 'GET_MOCK_DATA' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    Logger.error("Failed to get mock data:", chrome.runtime.lastError.message);
-                    reject(new Error(chrome.runtime.lastError.message));
-                    return;
-                }
-                if (response && response.success) {
-                    Logger.log("Mock data loaded successfully");
-                    // Adjust mock data c values to match actual DOM
-                    const adjustedData = adjustMockDataToWordMap(response.data, wordMap);
-                    Logger.debug("Adjusted mock data:", adjustedData.blocks.slice(0, 3));
-                    resolve(adjustedData);
-                } else {
-                    Logger.error("Failed to load mock data:", response?.error);
-                    reject(new Error(response?.error || 'Unknown error loading mock data'));
-                }
-            });
-        });
-    }
-
     return new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
             action: 'PARTITION_TEXT',
@@ -621,16 +539,18 @@ function renderSegmentations(p, alignedSegments) {
         }
 
         // 3. Translation Overlay Container (multi-line support)
+        // Append to #preview-content so overlays scroll with content and go behind fixed nav bar
+        const contentDiv = document.getElementById('preview-content');
         const overlayContainer = document.createElement('div');
         overlayContainer.className = 'translation-overlay-container';
         if (translationsVisible) overlayContainer.classList.add('translation-visible');
-        document.body.appendChild(overlayContainer);
+        (contentDiv || document.body).appendChild(overlayContainer);
         p._translationOverlays.push(overlayContainer);
 
         // 4. Segment Highlight Container (always created for visual feedback)
         const debugEl = document.createElement('div');
         debugEl.className = 'clause-debug-container';
-        document.body.appendChild(debugEl);
+        (contentDiv || document.body).appendChild(debugEl);
         p._translationOverlays.push(debugEl);
 
         const overlayData = {
@@ -754,6 +674,10 @@ function splitTranslationByLines(translation, lineRects) {
 }
 
 function updateOverlayPositions() {
+    // Get container rect for relative positioning (overlays are now inside #preview-content)
+    const contentDiv = document.getElementById('preview-content');
+    const containerRect = contentDiv ? contentDiv.getBoundingClientRect() : null;
+
     activeOverlays.forEach((item, idx) => {
         const rects = item.range.getClientRects();
         if (!rects.length) return;
@@ -778,10 +702,18 @@ function updateOverlayPositions() {
             lineOverlay.className = 'translation-line';
             lineOverlay.textContent = translationLines[lineIdx] || '';
 
-            // Position: centered above the original line
+            // Position: centered above the original line, relative to #preview-content
             const estimatedHeight = 20;
-            const top = line.top + window.scrollY - estimatedHeight - 8;
-            const centerX = line.left + window.scrollX + (line.width / 2);
+            let top, centerX;
+            if (containerRect) {
+                // Relative to #preview-content container
+                top = line.top - containerRect.top - estimatedHeight - 8;
+                centerX = line.left - containerRect.left + (line.width / 2);
+            } else {
+                // Fallback to document-relative positioning
+                top = line.top + window.scrollY - estimatedHeight - 8;
+                centerX = line.left + window.scrollX + (line.width / 2);
+            }
 
             lineOverlay.style.top = `${top}px`;
             lineOverlay.style.left = `${centerX}px`;
@@ -797,8 +729,16 @@ function updateOverlayPositions() {
                 const box = document.createElement('div');
                 box.className = 'clause-debug-highlight';
                 box.setAttribute('data-type', item.type || CONFIG.currentSegmentationType);
-                box.style.top = `${line.top + window.scrollY}px`;
-                box.style.left = `${line.left + window.scrollX}px`;
+                let boxTop, boxLeft;
+                if (containerRect) {
+                    boxTop = line.top - containerRect.top;
+                    boxLeft = line.left - containerRect.left;
+                } else {
+                    boxTop = line.top + window.scrollY;
+                    boxLeft = line.left + window.scrollX;
+                }
+                box.style.top = `${boxTop}px`;
+                box.style.left = `${boxLeft}px`;
                 box.style.width = `${line.width}px`;
                 box.style.height = `${line.height}px`;
                 item.debugElement.appendChild(box);
@@ -811,69 +751,6 @@ window.addEventListener('resize', updateOverlayPositions);
 window.addEventListener('scroll', updateOverlayPositions);
 
 // --- UI Components ---
-
-function showTestingModePanel(segments) {
-    // Remove existing panel if any
-    const existing = document.getElementById('elevenlabs-testing-panel');
-    if (existing) existing.remove();
-
-    const panel = document.createElement('div');
-    panel.id = 'elevenlabs-testing-panel';
-    panel.style.cssText = `
-        position: fixed;
-        top: 80px;
-        right: 20px;
-        width: 350px;
-        max-height: 70vh;
-        overflow-y: auto;
-        background: white;
-        border: 2px solid #4CAF50;
-        border-radius: 8px;
-        padding: 15px;
-        z-index: 10001;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-        font-family: sans-serif;
-        font-size: 13px;
-    `;
-
-    const header = document.createElement('div');
-    header.style.cssText = 'font-weight: bold; margin-bottom: 10px; color: #4CAF50; display: flex; justify-content: space-between; align-items: center;';
-    header.innerHTML = `<span>Testing Mode - Mock Data (${segments.length} items)</span>`;
-
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.style.cssText = 'background: none; border: none; font-size: 20px; cursor: pointer; color: #666;';
-    closeBtn.onclick = () => panel.remove();
-    header.appendChild(closeBtn);
-
-    panel.appendChild(header);
-
-    const note = document.createElement('div');
-    note.style.cssText = 'background: #fff3cd; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 11px; color: #856404;';
-    note.textContent = '⚠️ Mock data does not match page content. Showing translations in panel instead of overlays.';
-    panel.appendChild(note);
-
-    segments.slice(0, 15).forEach((seg, i) => {
-        const item = document.createElement('div');
-        item.style.cssText = 'padding: 8px; margin: 5px 0; background: #f5f5f5; border-radius: 4px; border-left: 3px solid #2196F3;';
-        // Handle both legacy format (original) and position-based format (start_c/end_c)
-        const originalText = seg.original || `[c: ${seg.start_c} - ${seg.end_c}]`;
-        item.innerHTML = `
-            <div style="color: #333; margin-bottom: 4px;">${originalText}</div>
-            <div style="color: #666; font-style: italic;">→ ${seg.translation}</div>
-        `;
-        panel.appendChild(item);
-    });
-
-    if (segments.length > 15) {
-        const more = document.createElement('div');
-        more.style.cssText = 'text-align: center; color: #666; padding: 10px;';
-        more.textContent = `... and ${segments.length - 15} more`;
-        panel.appendChild(more);
-    }
-
-    document.body.appendChild(panel);
-}
 
 function injectProcessingBanner() {
     if (document.getElementById('elevenlabs-processing-banner')) return;
@@ -1071,8 +948,7 @@ async function processParagraphs() {
                     // Enable toggle button as soon as first paragraph has translations
                     enableToggleButtonIfReady();
                 } else if (blocks.length > 0) {
-                    Logger.warn("No blocks mapped - check c values match between mock data and DOM");
-                    showTestingModePanel(blocks);
+                    Logger.warn("No blocks mapped - check c values match between API response and DOM");
                 }
 
                 // Output standardized training data for prompt refinement
@@ -1139,9 +1015,8 @@ function updateHighlightingVisibility(partitioningEnabled) {
 }
 
 function init() {
-    chrome.storage.sync.get(['enabled', 'testingMode', 'partitioningEnabled', 'individualTranslations', 'limitSingleParagraph'], (result) => {
+    chrome.storage.sync.get(['enabled', 'partitioningEnabled', 'individualTranslations', 'limitSingleParagraph'], (result) => {
         if (result.enabled === false) return;
-        CONFIG.testingMode = result.testingMode === true; // Default false (live mode)
         CONFIG.individualTranslations = result.individualTranslations !== false; // Default true
         CONFIG.limitSingleParagraph = result.limitSingleParagraph === true; // Default false (process all paragraphs)
 

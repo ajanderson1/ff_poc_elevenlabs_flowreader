@@ -31,11 +31,5 @@
         "styles.css"
       ]
     }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["mock-llm-response.json"],
-      "matches": ["https://elevenreader.io/*"]
-    }
   ]
 }
