@@ -542,22 +542,90 @@ function hideIndividualTranslation(overlayData) {
 }
 
 /**
- * Sets up mouseenter/mouseleave listeners for hover-to-reveal functionality
+ * Sets up mouseenter/mouseleave listeners for hover-to-reveal functionality.
+ * Uses mouse position tracking to handle whitespace between words.
  * @param {HTMLSpanElement[]} spans - The spans that make up this meaning block
  * @param {object} overlayData - The overlay data to show/hide on hover
  */
 function setupHoverListeners(spans, overlayData) {
+    if (spans.length === 0) return;
+
+    let isTrackingWhitespace = false;
+
+    /**
+     * Calculate the combined bounding box of all spans in this block.
+     * Uses getBoundingClientRect for viewport-relative coordinates.
+     */
+    const getBlockBounds = () => {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const span of spans) {
+            const rect = span.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+            minX = Math.min(minX, rect.left);
+            minY = Math.min(minY, rect.top);
+            maxX = Math.max(maxX, rect.right);
+            maxY = Math.max(maxY, rect.bottom);
+        }
+        return { left: minX, top: minY, right: maxX, bottom: maxY };
+    };
+
+    /**
+     * Check if a point (viewport coordinates) is within the block bounds.
+     * Includes small tolerance (2px) for edge cases.
+     */
+    const isPointInBounds = (x, y) => {
+        const bounds = getBlockBounds();
+        return x >= bounds.left - 2 && x <= bounds.right + 2 &&
+               y >= bounds.top - 2 && y <= bounds.bottom + 2;
+    };
+
+    /**
+     * Handler for tracking mouse movement while over whitespace.
+     * Hides translation when mouse leaves the block's bounding area.
+     */
+    const onMouseMove = (e) => {
+        if (!isPointInBounds(e.clientX, e.clientY)) {
+            stopTracking();
+            hideIndividualTranslation(overlayData);
+        }
+    };
+
+    const startTracking = () => {
+        if (!isTrackingWhitespace) {
+            isTrackingWhitespace = true;
+            document.addEventListener('mousemove', onMouseMove);
+        }
+    };
+
+    const stopTracking = () => {
+        if (isTrackingWhitespace) {
+            isTrackingWhitespace = false;
+            document.removeEventListener('mousemove', onMouseMove);
+        }
+    };
+
     spans.forEach(span => {
         span.addEventListener('mouseenter', () => {
+            // Back on a span - stop tracking whitespace
+            stopTracking();
             showIndividualTranslation(overlayData);
         });
 
         span.addEventListener('mouseleave', (e) => {
-            // Check if we're moving to another span in the same block
+            // Moving directly to another span in same block?
             const relatedTarget = e.relatedTarget;
             if (relatedTarget && spans.includes(relatedTarget)) {
-                return; // Don't hide when moving within the same block
+                return; // Other span's mouseenter will handle it
             }
+
+            // Check if mouse is still within the block's visual bounds
+            // (i.e., over whitespace between words)
+            if (isPointInBounds(e.clientX, e.clientY)) {
+                startTracking();
+                return;
+            }
+
+            // Actually leaving the block
             hideIndividualTranslation(overlayData);
         });
     });
