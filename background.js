@@ -217,6 +217,9 @@ async function handlePositionBasedPartitioning(wordData) {
             console.log('ElevenLabs Translator: API response received');
             var content = data.choices[0].message.content;
 
+            // Extract token usage for cost tracking
+            const tokenUsage = data.usage || { prompt_tokens: 0, completion_tokens: 0 };
+
             var jsonStr = content.trim();
             if (jsonStr.indexOf('```json') === 0) {
                 jsonStr = jsonStr.replace(/^```json/, '').replace(/```$/, '');
@@ -241,6 +244,13 @@ async function handlePositionBasedPartitioning(wordData) {
             }
 
             validateBlockCoverage(parsed.blocks, wordData.words);
+
+            // Include token usage in the returned response
+            parsed.tokenUsage = {
+                promptTokens: tokenUsage.prompt_tokens,
+                completionTokens: tokenUsage.completion_tokens
+            };
+
             return parsed;
 
         } catch (error) {
