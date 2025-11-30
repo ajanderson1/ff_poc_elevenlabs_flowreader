@@ -167,6 +167,70 @@
       font-size: 0.85em;
       min-height: 1.2em;
     }
+
+    /* Shadowing settings styles */
+    .shadowing-section {
+      margin-top: 15px;
+      border-top: 1px solid #eee;
+      padding-top: 15px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .setting-row label {
+      font-size: 13px;
+    }
+
+    .number-input {
+      width: 50px;
+      padding: 4px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .range-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .range-input {
+      width: 80px;
+    }
+
+    .range-value {
+      font-size: 12px;
+      color: #666;
+      min-width: 35px;
+    }
+
+    .block-type-toggle {
+      display: flex;
+      background: #f0f0f0;
+      border-radius: 4px;
+      padding: 2px;
+    }
+
+    .block-type-btn {
+      padding: 4px 8px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 11px;
+      border-radius: 3px;
+      transition: background 0.2s;
+    }
+
+    .block-type-btn.active {
+      background: #2196F3;
+      color: white;
+    }
   </style>
 </head>
 
@@ -205,6 +269,39 @@
         <span class="slider round"></span>
       </label>
       <span>Show Meaning Blocks</span>
+    </div>
+
+    <div class="shadowing-section">
+      <div class="section-header">Shadowing</div>
+
+      <div class="control-group">
+        <label class="switch">
+          <input type="checkbox" id="shadowing-enabled">
+          <span class="slider round"></span>
+        </label>
+        <span>Enable Shadowing</span>
+      </div>
+
+      <div class="setting-row">
+        <label>Repetitions</label>
+        <input type="number" id="shadowing-repetitions" class="number-input" min="1" max="10" value="1">
+      </div>
+
+      <div class="setting-row">
+        <label>Pause Speed</label>
+        <div class="range-container">
+          <input type="range" id="shadowing-pause-speed" class="range-input" min="0.5" max="2.0" step="0.1" value="1.0">
+          <span id="pause-speed-value" class="range-value">1.0x</span>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <label>Block Type</label>
+        <div class="block-type-toggle">
+          <button type="button" id="block-type-meaning" class="block-type-btn active">Meaning</button>
+          <button type="button" id="block-type-sentence" class="block-type-btn">Sentence</button>
+        </div>
+      </div>
     </div>
 
     <div class="section-header">Testing</div>

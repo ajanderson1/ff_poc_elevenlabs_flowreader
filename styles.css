@@ -318,3 +318,73 @@ body.elt-translations-visible .elt-meaning-block[data-bg-color] {
 .elt-meaning-block.elt-hovered[data-bg-color] {
     background-color: var(--block-bg);
 }
+
+/* --- Shadowing Mode Styles --- */
+
+/* Countdown timer display (debug mode) */
+.elt-shadowing-countdown {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    z-index: 10002;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    opacity: 0;
+    transform: translateX(100%);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+}
+
+.elt-shadowing-countdown.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Animated ellipsis for pause indicator */
+@keyframes elt-ellipsis {
+    0%, 100% { content: '.'; }
+    33% { content: '..'; }
+    66% { content: '...'; }
+}
+
+/* Play button during shadowing pause */
+.elt-shadowing-paused::after {
+    content: '';
+    animation: elt-ellipsis 1.5s infinite steps(1);
+    font-size: 1.2em;
+    letter-spacing: 2px;
+}
+
+/* Toggle button during shadowing pause - show animated ellipsis */
+#elevenlabs-translator-toggle.elt-shadowing-paused {
+    background-color: #9c27b0 !important;
+}
+
+#elevenlabs-translator-toggle.elt-shadowing-paused::before {
+    content: '...';
+    animation: elt-pulse 1s infinite;
+}
+
+@keyframes elt-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Body class during shadowing pause - subtle visual indicator */
+body.elt-shadowing-pause #preview-content {
+    border-left: 4px solid #9c27b0;
+    padding-left: 12px;
+    transition: border-left 0.3s ease, padding-left 0.3s ease;
+}
+
+/* Highlight the current block during shadowing */
+body.elt-shadowing-pause .elt-meaning-block[data-bg-color] {
+    background-color: rgba(156, 39, 176, 0.2) !important;
+    border-radius: 3px;
+}

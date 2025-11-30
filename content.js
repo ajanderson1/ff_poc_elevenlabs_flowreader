@@ -229,6 +229,23 @@ let hasProcessedInitially = false; // Ensures LLM call only happens once per pag
 let activeOverlays = []; // Stores { range, overlayElement, debugElement, type }
 let isUsingCachedTranslations = false; // Track if we're loading from cache
 
+// --- Shadowing State ---
+const shadowingState = {
+    enabled: false,
+    repetitions: 1,
+    pauseSpeed: 1.0,
+    blockType: 'meaningBlock', // or 'sentence'
+    isInPause: false,
+    currentBlockIndex: -1,
+    currentRepetition: 0,
+    pauseTimer: null,
+    pauseStartTime: 0,
+    pauseDuration: 0,
+    lastBlockEndC: -1, // Track last block boundary we passed
+    countdownElement: null,
+    isWaitingForBlockEnd: false
+};
+
 // --- Cost Tracking State ---
 // Running totals for cost summary (reset per page load)
 const costTracker = {
@@ -1257,6 +1274,491 @@ function updateHighlightingVisibility(partitioningEnabled) {
     Logger.log("Debug highlights in DOM:", document.querySelectorAll('.clause-debug-highlight').length);
 }
 
+// --- Shadowing Module ---
+
+/**
+ * Gets the audio element used by ElevenLabs Reader.
+ * @returns {HTMLAudioElement|null} The audio element or null if not found
+ */
+function getAudioElement() {
+    // ElevenLabs Reader uses an audio element for playback
+    return document.querySelector('audio');
+}
+
+/**
+ * Pauses the audio playback.
+ */
+function pauseAudio() {
+    const audio = getAudioElement();
+    if (audio) {
+        audio.pause();
+        Logger.debug("Shadowing: Audio paused");
+    }
+}
+
+/**
+ * Resumes the audio playback.
+ */
+function resumeAudio() {
+    const audio = getAudioElement();
+    if (audio) {
+        audio.play();
+        Logger.debug("Shadowing: Audio resumed");
+    }
+}
+
+/**
+ * Gets the current playback rate of the audio element.
+ * @returns {number} The playback rate (default 1.0)
+ */
+function getPlaybackRate() {
+    const audio = getAudioElement();
+    return audio ? audio.playbackRate : 1.0;
+}
+
+/**
+ * Calculates the pause duration based on block text length.
+ * Uses word count and estimated WPM to determine speaking time.
+ * @param {string} blockText - The text content of the block
+ * @returns {number} Pause duration in milliseconds
+ */
+function calculatePauseDuration(blockText) {
+    if (!blockText) return 2000; // Default 2 seconds
+
+    const words = blockText.trim().split(/\s+/).length;
+    const WPM = 150; // Approximate speaking rate
+    const baseMinutes = words / WPM;
+    const baseMs = baseMinutes * 60 * 1000;
+
+    // Adjust for playback rate and pause speed multiplier
+    const playbackRate = getPlaybackRate();
+    const adjustedMs = (baseMs / playbackRate) * shadowingState.pauseSpeed;
+
+    // Minimum 1 second, maximum 30 seconds
+    const finalMs = Math.max(1000, Math.min(30000, adjustedMs));
+
+    Logger.debug("Shadowing: Calculated pause duration", {
+        words,
+        baseMs: baseMs.toFixed(0),
+        playbackRate,
+        pauseSpeed: shadowingState.pauseSpeed,
+        finalMs: finalMs.toFixed(0)
+    });
+
+    return finalMs;
+}
+
+/**
+ * Shows the shadowing pause countdown in the UI.
+ * Only visible in debug mode.
+ */
+function showShadowingCountdown() {
+    // Create countdown element if it doesn't exist
+    if (!shadowingState.countdownElement) {
+        const countdown = document.createElement('div');
+        countdown.id = 'elt-shadowing-countdown';
+        countdown.className = 'elt-shadowing-countdown';
+        document.body.appendChild(countdown);
+        shadowingState.countdownElement = countdown;
+    }
+
+    shadowingState.countdownElement.classList.add('visible');
+    updateShadowingCountdown();
+}
+
+/**
+ * Updates the countdown display during shadowing pause.
+ */
+function updateShadowingCountdown() {
+    if (!shadowingState.countdownElement || !shadowingState.isInPause) return;
+
+    const elapsed = Date.now() - shadowingState.pauseStartTime;
+    const remaining = Math.max(0, shadowingState.pauseDuration - elapsed);
+    const seconds = (remaining / 1000).toFixed(1);
+
+    const repText = shadowingState.repetitions > 1
+        ? ` (${shadowingState.currentRepetition + 1}/${shadowingState.repetitions})`
+        : '';
+
+    shadowingState.countdownElement.textContent = `Repeat: ${seconds}s${repText}`;
+
+    if (remaining > 0) {
+        requestAnimationFrame(updateShadowingCountdown);
+    }
+}
+
+/**
+ * Hides the shadowing pause countdown.
+ */
+function hideShadowingCountdown() {
+    if (shadowingState.countdownElement) {
+        shadowingState.countdownElement.classList.remove('visible');
+    }
+}
+
+/**
+ * Shows the animated ellipsis on the play button during shadowing pause.
+ */
+function showPlayButtonEllipsis() {
+    // Try to find the play button using various selectors
+    const playBtn = document.querySelector(
+        '[data-testid="play-pause-button"],' +
+        '[aria-label="Play"],' +
+        '[aria-label="Pause"],' +
+        'button[class*="play" i],' +
+        'button[class*="pause" i]'
+    );
+
+    if (playBtn) {
+        playBtn.classList.add('elt-shadowing-paused');
+        playBtn.setAttribute('data-original-content', playBtn.innerHTML);
+    }
+
+    // Also update our toggle button
+    const toggleBtn = document.getElementById('elevenlabs-translator-toggle');
+    if (toggleBtn) {
+        toggleBtn.classList.add('elt-shadowing-paused');
+    }
+}
+
+/**
+ * Hides the animated ellipsis on the play button.
+ */
+function hidePlayButtonEllipsis() {
+    const playBtn = document.querySelector('.elt-shadowing-paused');
+    if (playBtn) {
+        playBtn.classList.remove('elt-shadowing-paused');
+        const originalContent = playBtn.getAttribute('data-original-content');
+        if (originalContent) {
+            playBtn.innerHTML = originalContent;
+            playBtn.removeAttribute('data-original-content');
+        }
+    }
+
+    const toggleBtn = document.getElementById('elevenlabs-translator-toggle');
+    if (toggleBtn) {
+        toggleBtn.classList.remove('elt-shadowing-paused');
+    }
+}
+
+/**
+ * Gets the text content of a block by its index.
+ * @param {number} blockIndex - Index of the block
+ * @param {Array} boundaries - Block boundaries array
+ * @returns {string} The block's text content
+ */
+function getBlockText(blockIndex, boundaries) {
+    if (blockIndex < 0 || blockIndex >= boundaries.length) return '';
+
+    const block = boundaries[blockIndex];
+    const contentDiv = document.getElementById('preview-content');
+    if (!contentDiv) return '';
+
+    // Find all spans in this block range
+    const spans = Array.from(contentDiv.querySelectorAll('span[c]'));
+    const blockSpans = spans.filter(span => {
+        const c = parseInt(span.getAttribute('c'), 10);
+        return c >= block.startC && c <= block.endC;
+    });
+
+    return blockSpans.map(s => s.textContent).join(' ').trim();
+}
+
+/**
+ * Starts the shadowing pause for the current block.
+ * @param {number} blockIndex - Index of the block that just finished
+ * @param {Array} boundaries - Block boundaries array
+ */
+function startShadowingPause(blockIndex, boundaries) {
+    if (shadowingState.isInPause) return;
+
+    const blockText = getBlockText(blockIndex, boundaries);
+    const pauseDuration = calculatePauseDuration(blockText);
+
+    Logger.log("Shadowing: Starting pause for block", blockIndex, {
+        text: blockText.substring(0, 50) + '...',
+        duration: pauseDuration,
+        repetition: shadowingState.currentRepetition + 1,
+        totalReps: shadowingState.repetitions
+    });
+
+    shadowingState.isInPause = true;
+    shadowingState.currentBlockIndex = blockIndex;
+    shadowingState.pauseStartTime = Date.now();
+    shadowingState.pauseDuration = pauseDuration;
+
+    // Pause the audio
+    pauseAudio();
+
+    // Visual feedback
+    showPlayButtonEllipsis();
+    if (CONFIG.debugClauses) {
+        showShadowingCountdown();
+    }
+
+    // Add body class for styling
+    document.body.classList.add('elt-shadowing-pause');
+
+    // Set timer for when pause ends
+    shadowingState.pauseTimer = setTimeout(() => {
+        endShadowingPause(boundaries);
+    }, pauseDuration);
+}
+
+/**
+ * Ends the current shadowing pause and decides what to do next.
+ * @param {Array} boundaries - Block boundaries array
+ */
+function endShadowingPause(boundaries) {
+    if (!shadowingState.isInPause) return;
+
+    // Clear the timer if it exists
+    if (shadowingState.pauseTimer) {
+        clearTimeout(shadowingState.pauseTimer);
+        shadowingState.pauseTimer = null;
+    }
+
+    shadowingState.currentRepetition++;
+
+    // Check if we need to repeat this block
+    if (shadowingState.currentRepetition < shadowingState.repetitions) {
+        Logger.log("Shadowing: Replaying block", shadowingState.currentBlockIndex,
+            `(rep ${shadowingState.currentRepetition + 1}/${shadowingState.repetitions})`);
+
+        // Reset pause state
+        shadowingState.isInPause = false;
+        hideShadowingCountdown();
+        hidePlayButtonEllipsis();
+        document.body.classList.remove('elt-shadowing-pause');
+
+        // Seek back to start of current block and replay
+        const block = boundaries[shadowingState.currentBlockIndex];
+        if (block && block.firstSpan) {
+            seekToSpan(block.firstSpan);
+            // Small delay before resuming to let the seek complete
+            setTimeout(() => {
+                resumeAudio();
+                // Wait for this block to end again
+                shadowingState.isWaitingForBlockEnd = true;
+            }, 100);
+        } else {
+            resumeAudio();
+        }
+    } else {
+        Logger.log("Shadowing: Block complete, moving to next");
+
+        // Reset for next block
+        shadowingState.isInPause = false;
+        shadowingState.currentRepetition = 0;
+        hideShadowingCountdown();
+        hidePlayButtonEllipsis();
+        document.body.classList.remove('elt-shadowing-pause');
+
+        // Resume audio to continue to next block
+        resumeAudio();
+
+        // Wait for next block end
+        shadowingState.isWaitingForBlockEnd = true;
+    }
+}
+
+/**
+ * Cancels the current shadowing pause without advancing.
+ * User can resume with spacebar.
+ */
+function cancelShadowingPause() {
+    if (!shadowingState.isInPause) return;
+
+    Logger.log("Shadowing: Pause cancelled by user");
+
+    // Clear the timer
+    if (shadowingState.pauseTimer) {
+        clearTimeout(shadowingState.pauseTimer);
+        shadowingState.pauseTimer = null;
+    }
+
+    shadowingState.isInPause = false;
+    shadowingState.isWaitingForBlockEnd = false;
+    hideShadowingCountdown();
+    hidePlayButtonEllipsis();
+    document.body.classList.remove('elt-shadowing-pause');
+
+    // Audio stays paused - user will resume with spacebar
+}
+
+/**
+ * Replays the current block from the beginning during shadowing pause.
+ */
+function replayShadowingBlock() {
+    const boundaries = shadowingState.blockType === 'sentence'
+        ? getSentenceBoundaries()
+        : getBlockBoundaries();
+
+    if (shadowingState.currentBlockIndex < 0 || shadowingState.currentBlockIndex >= boundaries.length) {
+        return;
+    }
+
+    Logger.log("Shadowing: Replaying current block", shadowingState.currentBlockIndex);
+
+    // Cancel current pause timer
+    if (shadowingState.pauseTimer) {
+        clearTimeout(shadowingState.pauseTimer);
+        shadowingState.pauseTimer = null;
+    }
+
+    shadowingState.isInPause = false;
+    hideShadowingCountdown();
+    hidePlayButtonEllipsis();
+    document.body.classList.remove('elt-shadowing-pause');
+
+    // Don't increment repetition - this is a manual replay
+    // Seek to start of current block
+    const block = boundaries[shadowingState.currentBlockIndex];
+    if (block && block.firstSpan) {
+        seekToSpan(block.firstSpan);
+        setTimeout(() => {
+            resumeAudio();
+            shadowingState.isWaitingForBlockEnd = true;
+        }, 100);
+    }
+}
+
+/**
+ * Skips to the next block during shadowing pause.
+ */
+function skipToNextShadowingBlock() {
+    const boundaries = shadowingState.blockType === 'sentence'
+        ? getSentenceBoundaries()
+        : getBlockBoundaries();
+
+    const nextIndex = shadowingState.currentBlockIndex + 1;
+    if (nextIndex >= boundaries.length) {
+        Logger.log("Shadowing: Already at last block");
+        cancelShadowingPause();
+        return;
+    }
+
+    Logger.log("Shadowing: Skipping to next block", nextIndex);
+
+    // Cancel current pause
+    if (shadowingState.pauseTimer) {
+        clearTimeout(shadowingState.pauseTimer);
+        shadowingState.pauseTimer = null;
+    }
+
+    shadowingState.isInPause = false;
+    shadowingState.currentRepetition = 0;
+    shadowingState.currentBlockIndex = nextIndex;
+    hideShadowingCountdown();
+    hidePlayButtonEllipsis();
+    document.body.classList.remove('elt-shadowing-pause');
+
+    // Seek to start of next block
+    const block = boundaries[nextIndex];
+    if (block && block.firstSpan) {
+        seekToSpan(block.firstSpan);
+        setTimeout(() => {
+            resumeAudio();
+            shadowingState.isWaitingForBlockEnd = true;
+        }, 100);
+    }
+}
+
+/**
+ * Watches for block boundary crossing during playback.
+ * Called when the highlighted word changes.
+ */
+function checkForBlockBoundary() {
+    if (!shadowingState.enabled || !shadowingState.isWaitingForBlockEnd) return;
+
+    const boundaries = shadowingState.blockType === 'sentence'
+        ? getSentenceBoundaries()
+        : getBlockBoundaries();
+
+    if (boundaries.length === 0) return;
+
+    const currentPos = getCurrentPlaybackPosition();
+    if (currentPos < 0) return;
+
+    // Find current block
+    const currentBlockIndex = findBlockIndex(boundaries, currentPos);
+    if (currentBlockIndex < 0) return;
+
+    const currentBlock = boundaries[currentBlockIndex];
+
+    // Check if we've moved past the end of a block
+    // This happens when currentPos is at the start of the next block
+    if (shadowingState.lastBlockEndC >= 0 && currentPos > shadowingState.lastBlockEndC) {
+        // We've crossed a boundary - trigger pause for the previous block
+        const prevBlockIndex = currentBlockIndex > 0 ? currentBlockIndex - 1 : 0;
+
+        // Only trigger if we haven't already paused for this block
+        if (prevBlockIndex !== shadowingState.currentBlockIndex || !shadowingState.isInPause) {
+            shadowingState.isWaitingForBlockEnd = false;
+            startShadowingPause(prevBlockIndex, boundaries);
+        }
+    }
+
+    // Update tracking
+    shadowingState.lastBlockEndC = currentBlock.endC;
+}
+
+/**
+ * Initializes the shadowing observer to watch for word highlighting changes.
+ */
+function initShadowingObserver() {
+    const contentDiv = document.getElementById('preview-content');
+    if (!contentDiv) return;
+
+    // Watch for class changes on spans (highlighting changes)
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.type === 'attributes' &&
+                mutation.attributeName === 'class' &&
+                mutation.target.tagName === 'SPAN' &&
+                mutation.target.hasAttribute('c')) {
+                // A word's class changed - check if we've crossed a boundary
+                checkForBlockBoundary();
+                break;
+            }
+        }
+    });
+
+    observer.observe(contentDiv, {
+        attributes: true,
+        attributeFilter: ['class'],
+        subtree: true
+    });
+
+    Logger.log("Shadowing: Observer initialized");
+}
+
+/**
+ * Loads shadowing settings from storage and applies them.
+ */
+function loadShadowingSettings() {
+    chrome.storage.sync.get([
+        'shadowingEnabled', 'shadowingRepetitions', 'shadowingPauseSpeed', 'shadowingBlockType'
+    ], (result) => {
+        shadowingState.enabled = result.shadowingEnabled === true;
+        shadowingState.repetitions = result.shadowingRepetitions || 1;
+        shadowingState.pauseSpeed = result.shadowingPauseSpeed || 1.0;
+        shadowingState.blockType = result.shadowingBlockType || 'meaningBlock';
+
+        Logger.log("Shadowing: Settings loaded", {
+            enabled: shadowingState.enabled,
+            repetitions: shadowingState.repetitions,
+            pauseSpeed: shadowingState.pauseSpeed,
+            blockType: shadowingState.blockType
+        });
+
+        if (shadowingState.enabled) {
+            initShadowingObserver();
+            shadowingState.isWaitingForBlockEnd = true;
+        }
+    });
+}
+
 function init() {
     chrome.storage.sync.get(['enabled', 'partitioningEnabled', 'individualTranslations', 'limitSingleParagraph'], (result) => {
         if (result.enabled === false) return;
@@ -1279,6 +1781,9 @@ function init() {
 
         injectProcessingBanner();
         injectToggleButton();
+
+        // Load shadowing settings
+        loadShadowingSettings();
 
         // Observer - only for styling, NOT for triggering LLM calls
         const observer = new MutationObserver((mutations) => {
@@ -1694,9 +2199,16 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Spacebar: Play/Pause
+    // Spacebar: Play/Pause (or cancel shadowing pause)
     if (e.code === 'Space') {
         e.preventDefault();
+
+        // If in shadowing pause, cancel it and pause audio
+        if (shadowingState.isInPause) {
+            cancelShadowingPause();
+            Logger.log("Spacebar: cancelled shadowing pause");
+            return;
+        }
 
         // Try multiple selectors for the play/pause button
         // ElevenLabs Reader uses various button patterns
@@ -1737,6 +2249,10 @@ document.addEventListener('keydown', (e) => {
         if (playPauseBtn) {
             playPauseBtn.click();
             Logger.log("Spacebar: toggled play/pause");
+            // If shadowing is enabled and we just started playing, re-enable boundary watching
+            if (shadowingState.enabled) {
+                shadowingState.isWaitingForBlockEnd = true;
+            }
         } else {
             Logger.warn("Spacebar: could not find play/pause button. Try inspecting the page to find the correct selector.");
         }
@@ -1757,16 +2273,30 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Left Arrow: Navigate to current/previous block
+    // Left Arrow: Navigate to current/previous block (or replay during shadowing pause)
     if (e.code === 'ArrowLeft') {
         e.preventDefault();
+
+        // If in shadowing pause, replay current block
+        if (shadowingState.isInPause) {
+            replayShadowingBlock();
+            return;
+        }
+
         navigateMeaningBlocks('left', navState.left);
         return;
     }
 
-    // Right Arrow: Navigate to next block
+    // Right Arrow: Navigate to next block (or skip during shadowing pause)
     if (e.code === 'ArrowRight') {
         e.preventDefault();
+
+        // If in shadowing pause, skip to next block
+        if (shadowingState.isInPause) {
+            skipToNextShadowingBlock();
+            return;
+        }
+
         navigateMeaningBlocks('right', navState.right);
         return;
     }
@@ -1795,6 +2325,33 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         if (changes.individualTranslations) {
             Logger.log("individualTranslations changed:", changes.individualTranslations.newValue);
             CONFIG.individualTranslations = changes.individualTranslations.newValue !== false;
+        }
+
+        // Shadowing settings changes
+        if (changes.shadowingEnabled) {
+            shadowingState.enabled = changes.shadowingEnabled.newValue === true;
+            Logger.log("Shadowing enabled changed:", shadowingState.enabled);
+            if (shadowingState.enabled) {
+                initShadowingObserver();
+                shadowingState.isWaitingForBlockEnd = true;
+            } else {
+                // Cancel any active pause if shadowing is disabled
+                if (shadowingState.isInPause) {
+                    cancelShadowingPause();
+                }
+            }
+        }
+        if (changes.shadowingRepetitions) {
+            shadowingState.repetitions = changes.shadowingRepetitions.newValue || 1;
+            Logger.log("Shadowing repetitions changed:", shadowingState.repetitions);
+        }
+        if (changes.shadowingPauseSpeed) {
+            shadowingState.pauseSpeed = changes.shadowingPauseSpeed.newValue || 1.0;
+            Logger.log("Shadowing pause speed changed:", shadowingState.pauseSpeed);
+        }
+        if (changes.shadowingBlockType) {
+            shadowingState.blockType = changes.shadowingBlockType.newValue || 'meaningBlock';
+            Logger.log("Shadowing block type changed:", shadowingState.blockType);
         }
     }
 });

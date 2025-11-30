@@ -9,14 +9,41 @@ document.addEventListener('DOMContentLoaded', () => {
   const clearCacheBtn = document.getElementById('clear-cache');
   const cacheStatusMsg = document.getElementById('cache-status-msg');
 
+  // Shadowing controls
+  const shadowingToggle = document.getElementById('shadowing-enabled');
+  const shadowingRepetitions = document.getElementById('shadowing-repetitions');
+  const shadowingPauseSpeed = document.getElementById('shadowing-pause-speed');
+  const pauseSpeedValue = document.getElementById('pause-speed-value');
+  const blockTypeMeaning = document.getElementById('block-type-meaning');
+  const blockTypeSentence = document.getElementById('block-type-sentence');
+
   // Load saved settings
-  chrome.storage.sync.get(['enabled', 'openaiApiKey', 'individualTranslations', 'partitioningEnabled', 'limitSingleParagraph'], (result) => {
+  chrome.storage.sync.get([
+    'enabled', 'openaiApiKey', 'individualTranslations', 'partitioningEnabled', 'limitSingleParagraph',
+    'shadowingEnabled', 'shadowingRepetitions', 'shadowingPauseSpeed', 'shadowingBlockType'
+  ], (result) => {
     toggle.checked = result.enabled !== false; // Default true
     individualTranslationsToggle.checked = result.individualTranslations !== false; // Default true
     partitioningToggle.checked = result.partitioningEnabled === true; // Default false (debug feature)
     limitSingleParagraphToggle.checked = result.limitSingleParagraph === true; // Default false (process all paragraphs)
     if (result.openaiApiKey) {
       apiKeyInput.value = result.openaiApiKey;
+    }
+
+    // Load shadowing settings
+    shadowingToggle.checked = result.shadowingEnabled === true; // Default false
+    shadowingRepetitions.value = result.shadowingRepetitions || 1;
+    shadowingPauseSpeed.value = result.shadowingPauseSpeed || 1.0;
+    pauseSpeedValue.textContent = (result.shadowingPauseSpeed || 1.0) + 'x';
+
+    // Set block type buttons
+    const blockType = result.shadowingBlockType || 'meaningBlock';
+    if (blockType === 'sentence') {
+      blockTypeMeaning.classList.remove('active');
+      blockTypeSentence.classList.add('active');
+    } else {
+      blockTypeMeaning.classList.add('active');
+      blockTypeSentence.classList.remove('active');
     }
   });
 
@@ -86,5 +113,36 @@ document.addEventListener('DOMContentLoaded', () => {
         showCacheStatus('Failed to clear cache', 'red');
       }
     });
+  });
+
+  // Shadowing settings handlers
+  shadowingToggle.addEventListener('change', () => {
+    chrome.storage.sync.set({ shadowingEnabled: shadowingToggle.checked });
+  });
+
+  shadowingRepetitions.addEventListener('change', () => {
+    let value = parseInt(shadowingRepetitions.value, 10);
+    // Clamp value between 1 and 10
+    value = Math.max(1, Math.min(10, value || 1));
+    shadowingRepetitions.value = value;
+    chrome.storage.sync.set({ shadowingRepetitions: value });
+  });
+
+  shadowingPauseSpeed.addEventListener('input', () => {
+    const value = parseFloat(shadowingPauseSpeed.value);
+    pauseSpeedValue.textContent = value.toFixed(1) + 'x';
+    chrome.storage.sync.set({ shadowingPauseSpeed: value });
+  });
+
+  blockTypeMeaning.addEventListener('click', () => {
+    blockTypeMeaning.classList.add('active');
+    blockTypeSentence.classList.remove('active');
+    chrome.storage.sync.set({ shadowingBlockType: 'meaningBlock' });
+  });
+
+  blockTypeSentence.addEventListener('click', () => {
+    blockTypeSentence.classList.add('active');
+    blockTypeMeaning.classList.remove('active');
+    chrome.storage.sync.set({ shadowingBlockType: 'sentence' });
   });
 });
