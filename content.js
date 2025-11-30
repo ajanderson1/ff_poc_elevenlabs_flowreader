@@ -1500,21 +1500,15 @@ function hideShadowingCountdown() {
 }
 
 /**
- * Shows the animated ellipsis on the play button during shadowing pause.
+ * Shows visual feedback during shadowing pause.
+ * IMPORTANT: Only add/remove CSS classes - NEVER modify innerHTML of React elements
+ * as this destroys React's DOM node references and causes removeChild errors.
  */
 function showPlayButtonEllipsis() {
-    // Try to find the play button using various selectors
-    const playBtn = document.querySelector(
-        '[data-testid="play-pause-button"],' +
-        '[aria-label="Play"],' +
-        '[aria-label="Pause"],' +
-        'button[class*="play" i],' +
-        'button[class*="pause" i]'
-    );
-
+    // Add class to ElevenLabs play button (CSS handles visual via ::after)
+    const playBtn = findPlayPauseButton();
     if (playBtn) {
         playBtn.classList.add('elt-shadowing-paused');
-        playBtn.setAttribute('data-original-content', playBtn.innerHTML);
     }
 
     // Also update our toggle button
@@ -1525,18 +1519,20 @@ function showPlayButtonEllipsis() {
 }
 
 /**
- * Hides the animated ellipsis on the play button.
+ * Hides visual feedback when shadowing pause ends.
+ * IMPORTANT: Only add/remove CSS classes - NEVER modify innerHTML of React elements.
  */
 function hidePlayButtonEllipsis() {
-    const playBtn = document.querySelector('.elt-shadowing-paused');
+    // Remove class from ElevenLabs play button
+    const playBtn = findPlayPauseButton();
     if (playBtn) {
         playBtn.classList.remove('elt-shadowing-paused');
-        const originalContent = playBtn.getAttribute('data-original-content');
-        if (originalContent) {
-            playBtn.innerHTML = originalContent;
-            playBtn.removeAttribute('data-original-content');
-        }
     }
+
+    // Also check for any elements that might have the class
+    document.querySelectorAll('.elt-shadowing-paused').forEach(el => {
+        el.classList.remove('elt-shadowing-paused');
+    });
 
     const toggleBtn = document.getElementById('elevenlabs-translator-toggle');
     if (toggleBtn) {
