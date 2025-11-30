@@ -1,6 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
   const toggle = document.getElementById('toggle-extension');
-  const testingToggle = document.getElementById('toggle-testing');
   const individualTranslationsToggle = document.getElementById('individual-translations');
   const partitioningToggle = document.getElementById('partitioning-enabled');
   const limitSingleParagraphToggle = document.getElementById('limit-single-paragraph');
@@ -9,9 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusMsg = document.getElementById('status-msg');
 
   // Load saved settings
-  chrome.storage.sync.get(['enabled', 'openaiApiKey', 'testingMode', 'individualTranslations', 'partitioningEnabled', 'limitSingleParagraph'], (result) => {
+  chrome.storage.sync.get(['enabled', 'openaiApiKey', 'individualTranslations', 'partitioningEnabled', 'limitSingleParagraph'], (result) => {
     toggle.checked = result.enabled !== false; // Default true
-    testingToggle.checked = result.testingMode === true; // Default false (live mode)
     individualTranslationsToggle.checked = result.individualTranslations !== false; // Default true
     partitioningToggle.checked = result.partitioningEnabled === true; // Default false (debug feature)
     limitSingleParagraphToggle.checked = result.limitSingleParagraph === true; // Default false (process all paragraphs)
@@ -23,11 +21,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Save enabled state
   toggle.addEventListener('change', () => {
     chrome.storage.sync.set({ enabled: toggle.checked });
-  });
-
-  // Save testing state
-  testingToggle.addEventListener('change', () => {
-    chrome.storage.sync.set({ testingMode: testingToggle.checked });
   });
 
   // Save individual translations state

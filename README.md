@@ -42,7 +42,6 @@ Click the extension icon to open settings:
 | Setting | Description |
 |---------|-------------|
 | **Enable Extension** | Master on/off toggle |
-| **Testing Mode** | Use mock data instead of API calls (for development) |
 | **OpenAI API Key** | Required for translation (enter your `sk-...` key) |
 | **Always Show Underlines** | (Debug) Show block underlines even without translations visible |
 
@@ -63,8 +62,7 @@ Click the extension icon to open settings:
 ├── background.js       # Service worker for API calls
 ├── content.js          # Main content script (injection & UI)
 ├── styles.css          # Overlay and highlight styling
-├── popup.html/js       # Settings popup UI
-└── mock-llm-response.json  # Test data for development
+└── popup.html/js       # Settings popup UI
 ```
 
 ### Reloading Changes
@@ -77,7 +75,6 @@ After modifying code:
 
 - Console logs are prefixed with `[ELT]`
 - Filter in DevTools with: `/^\[ELT\]/`
-- Enable "Testing Mode" to use mock data without API calls
 
 ## Requirements
 
