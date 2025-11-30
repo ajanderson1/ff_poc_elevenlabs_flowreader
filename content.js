@@ -1633,6 +1633,17 @@ function endShadowingPause(boundaries) {
         // Seek back to start of current block and replay
         const block = boundaries[shadowingState.currentBlockIndex];
         if (block && block.firstSpan) {
+            // CRITICAL: Reset lastBlockEndC to the PREVIOUS block's end
+            // so boundary detection triggers when we reach THIS block's end again
+            const prevBlockIndex = shadowingState.currentBlockIndex - 1;
+            if (prevBlockIndex >= 0) {
+                shadowingState.lastBlockEndC = boundaries[prevBlockIndex].endC;
+            } else {
+                // First block - set to -1 so any position triggers initial tracking
+                shadowingState.lastBlockEndC = -1;
+            }
+            Logger.debug("Shadowing: Reset lastBlockEndC to", shadowingState.lastBlockEndC);
+
             seekToSpan(block.firstSpan);
             // Small delay before resuming to let the seek complete
             setTimeout(() => {
