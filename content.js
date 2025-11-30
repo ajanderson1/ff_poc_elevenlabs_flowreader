@@ -487,9 +487,32 @@ function alignSegmentsToTokens(tokens, segments) {
 
 // --- DOM Injection & Rendering ---
 
+/**
+ * Unwraps a meaning block wrapper, moving its children back to the parent.
+ * @param {HTMLSpanElement} wrapper - The wrapper element to unwrap
+ */
+function unwrapMeaningBlock(wrapper) {
+    if (!wrapper || !wrapper.parentNode) return;
+
+    const parent = wrapper.parentNode;
+    // Move all children back to parent before the wrapper
+    while (wrapper.firstChild) {
+        parent.insertBefore(wrapper.firstChild, wrapper);
+    }
+    // Remove the now-empty wrapper
+    wrapper.remove();
+}
+
 function clearOverlays(p) {
     if (p._translationOverlays) {
-        p._translationOverlays.forEach(el => el.remove());
+        p._translationOverlays.forEach(el => {
+            // Unwrap meaning block wrappers (restore original DOM)
+            if (el.classList && el.classList.contains('elt-meaning-block')) {
+                unwrapMeaningBlock(el);
+            } else {
+                el.remove();
+            }
+        });
         p._translationOverlays = [];
     }
     // Also clear from global activeOverlays
@@ -497,6 +520,7 @@ function clearOverlays(p) {
         if (p.contains(item.range.startContainer)) {
             if (item.overlayElement) item.overlayElement.remove();
             if (item.debugElement) item.debugElement.remove();
+            if (item.wrapper) unwrapMeaningBlock(item.wrapper);
             return false;
         }
         return true;
@@ -542,25 +566,33 @@ function hideIndividualTranslation(overlayData) {
 }
 
 /**
- * Sets up mouseenter/mouseleave listeners for hover-to-reveal functionality
+ * Wraps meaning block spans in an inline container element.
+ * This ensures whitespace between words is part of the hover area.
  * @param {HTMLSpanElement[]} spans - The spans that make up this meaning block
- * @param {object} overlayData - The overlay data to show/hide on hover
+ * @returns {HTMLSpanElement|null} The wrapper element, or null if wrapping failed
  */
-function setupHoverListeners(spans, overlayData) {
-    spans.forEach(span => {
-        span.addEventListener('mouseenter', () => {
-            showIndividualTranslation(overlayData);
-        });
+function wrapMeaningBlockSpans(spans) {
+    if (!spans || spans.length === 0) return null;
 
-        span.addEventListener('mouseleave', (e) => {
-            // Check if we're moving to another span in the same block
-            const relatedTarget = e.relatedTarget;
-            if (relatedTarget && spans.includes(relatedTarget)) {
-                return; // Don't hide when moving within the same block
-            }
-            hideIndividualTranslation(overlayData);
-        });
-    });
+    const wrapper = document.createElement('span');
+    wrapper.className = 'elt-meaning-block';
+
+    try {
+        // Use Range to capture spans AND whitespace between them
+        const range = document.createRange();
+        range.setStartBefore(spans[0]);
+        range.setEndAfter(spans[spans.length - 1]);
+
+        // Extract content (spans + whitespace), wrap it, insert back
+        const fragment = range.extractContents();
+        wrapper.appendChild(fragment);
+        range.insertNode(wrapper);
+
+        return wrapper;
+    } catch (e) {
+        Logger.error('Failed to wrap meaning block spans:', e);
+        return null;
+    }
 }
 
 function renderSegmentations(p, alignedSegments) {
@@ -569,17 +601,32 @@ function renderSegmentations(p, alignedSegments) {
     p._translationOverlays = [];
 
     alignedSegments.forEach((item, index) => {
-        const { segment, range, spans } = item;
+        const { segment, spans } = item;
         Logger.log(`Creating overlay ${index}:`, segment.type, segment.translation?.substring(0, 30));
 
-        // 1. Translation Overlay Container (multi-line support)
+        // 1. Wrap meaning block spans in inline container (includes whitespace)
+        const wrapper = wrapMeaningBlockSpans(spans);
+        if (wrapper) {
+            p._translationOverlays.push(wrapper);
+        }
+
+        // 2. Create new Range from wrapper for positioning (old range is invalidated)
+        const range = document.createRange();
+        if (wrapper) {
+            range.selectNodeContents(wrapper);
+        } else if (spans && spans.length > 0) {
+            range.setStartBefore(spans[0]);
+            range.setEndAfter(spans[spans.length - 1]);
+        }
+
+        // 3. Translation Overlay Container (multi-line support)
         const overlayContainer = document.createElement('div');
         overlayContainer.className = 'translation-overlay-container';
         if (translationsVisible) overlayContainer.classList.add('translation-visible');
         document.body.appendChild(overlayContainer);
         p._translationOverlays.push(overlayContainer);
 
-        // 2. Segment Highlight Container (always created for visual feedback)
+        // 4. Segment Highlight Container (always created for visual feedback)
         const debugEl = document.createElement('div');
         debugEl.className = 'clause-debug-container';
         document.body.appendChild(debugEl);
@@ -589,17 +636,19 @@ function renderSegmentations(p, alignedSegments) {
             range,
             overlayElement: overlayContainer,
             debugElement: debugEl,
+            wrapper: wrapper,  // Store wrapper for cleanup and hover
             type: segment.type,
             colorIndex: index % SEGMENT_COLOR_PALETTE.length,
             translation: segment.translation,
-            spans: spans || []  // Store spans for hover detection
+            spans: spans || []
         };
 
         activeOverlays.push(overlayData);
 
-        // Setup hover listeners for individual translation reveal
-        if (spans && spans.length > 0) {
-            setupHoverListeners(spans, overlayData);
+        // 5. Attach hover listeners to wrapper (covers entire block including whitespace)
+        if (wrapper) {
+            wrapper.addEventListener('mouseenter', () => showIndividualTranslation(overlayData));
+            wrapper.addEventListener('mouseleave', () => hideIndividualTranslation(overlayData));
         }
     });
 
