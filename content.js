@@ -587,12 +587,18 @@ function unwrapMeaningBlock(wrapper) {
  */
 function temporarilyUnwrapAllMeaningBlocks() {
     const wrappers = document.querySelectorAll('.elt-meaning-block');
+    Logger.log("Shadowing: Found", wrappers.length, "meaning block wrappers to unwrap");
+
     if (wrappers.length === 0) return false;
 
-    Logger.debug("Shadowing: Temporarily unwrapping", wrappers.length, "meaning blocks");
-
-    wrappers.forEach(wrapper => {
-        unwrapMeaningBlock(wrapper);
+    // Convert to array since unwrapping modifies the DOM
+    const wrapperArray = Array.from(wrappers);
+    wrapperArray.forEach(wrapper => {
+        try {
+            unwrapMeaningBlock(wrapper);
+        } catch (e) {
+            Logger.error("Shadowing: Error unwrapping block:", e);
+        }
     });
 
     // Clear wrapper references from activeOverlays
@@ -600,6 +606,7 @@ function temporarilyUnwrapAllMeaningBlocks() {
         overlay.wrapper = null;
     });
 
+    Logger.log("Shadowing: Unwrapped all meaning blocks");
     return true;
 }
 
@@ -709,9 +716,14 @@ function renderSegmentations(p, alignedSegments) {
         Logger.log(`Creating overlay ${index}:`, segment.type, segment.translation?.substring(0, 30));
 
         // 1. Wrap meaning block spans in inline container (includes whitespace)
-        const wrapper = wrapMeaningBlockSpans(spans);
-        if (wrapper) {
-            p._translationOverlays.push(wrapper);
+        // SKIP WRAPPING when shadowing is enabled to avoid React DOM conflicts
+        // ElevenLabs' React code expects original DOM structure for word highlighting
+        let wrapper = null;
+        if (!shadowingState.enabled) {
+            wrapper = wrapMeaningBlockSpans(spans);
+            if (wrapper) {
+                p._translationOverlays.push(wrapper);
+            }
         }
 
         // 2. Create new Range from wrapper for positioning (old range is invalidated)
@@ -1368,7 +1380,7 @@ function pauseAudio() {
 /**
  * Resumes the audio playback by clicking the play/pause button.
  * Only clicks if audio is currently paused.
- * Temporarily unwraps meaning blocks to avoid React DOM conflicts.
+ * Safety check: unwraps any remaining meaning blocks to avoid React DOM conflicts.
  */
 function resumeAudio() {
     if (isAudioPlaying()) {
@@ -1376,22 +1388,14 @@ function resumeAudio() {
         return;
     }
 
-    // Unwrap meaning blocks before resuming to avoid React DOM conflicts
-    // ElevenLabs' React code expects the original DOM structure
-    const hadWrappers = temporarilyUnwrapAllMeaningBlocks();
+    // Safety: unwrap any remaining meaning blocks before resuming
+    // (Shouldn't have any if shadowing was enabled before render, but just in case)
+    temporarilyUnwrapAllMeaningBlocks();
 
     const btn = findPlayPauseButton();
     if (btn) {
         btn.click();
         Logger.debug("Shadowing: Audio resumed via button click");
-
-        // If we unwrapped, trigger a re-render after React settles
-        if (hadWrappers) {
-            setTimeout(() => {
-                Logger.debug("Shadowing: Triggering re-render after resume");
-                reRenderAll();
-            }, 500);
-        }
     } else {
         Logger.warn("Shadowing: Could not find play/pause button to resume audio");
     }
@@ -2454,11 +2458,17 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
             if (shadowingState.enabled) {
                 initShadowingObserver();
                 shadowingState.isWaitingForBlockEnd = true;
+                // Re-render without wrappers to avoid React DOM conflicts
+                Logger.log("Shadowing enabled: re-rendering without wrappers");
+                reRenderAll();
             } else {
                 // Cancel any active pause if shadowing is disabled
                 if (shadowingState.isInPause) {
                     cancelShadowingPause();
                 }
+                // Re-render with wrappers now that shadowing is off
+                Logger.log("Shadowing disabled: re-rendering with wrappers");
+                reRenderAll();
             }
         }
         if (changes.shadowingRepetitions) {
