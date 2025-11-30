@@ -296,3 +296,14 @@ html[data-theme="dark"] .clause-debug-highlight.elt-hovered {
 #preview-content span[c] {
     cursor: pointer;
 }
+
+/* Hover wrapper for reliable hover detection across whitespace */
+.elt-hover-wrapper {
+    position: absolute;
+    pointer-events: auto;
+    cursor: pointer;
+    /* Transparent - only used for hover detection */
+    background: transparent;
+    /* Sit above text to capture hover events */
+    z-index: 9995;
+}

@@ -497,6 +497,7 @@ function clearOverlays(p) {
         if (p.contains(item.range.startContainer)) {
             if (item.overlayElement) item.overlayElement.remove();
             if (item.debugElement) item.debugElement.remove();
+            if (item.hoverWrapper) item.hoverWrapper.remove();
             return false;
         }
         return true;
@@ -542,24 +543,69 @@ function hideIndividualTranslation(overlayData) {
 }
 
 /**
+ * Creates a hover wrapper element that covers the entire meaning block area.
+ * This ensures hover detection works even over whitespace between words.
+ * @param {Range} range - The Range covering the meaning block
+ * @returns {HTMLDivElement} The wrapper element
+ */
+function createHoverWrapper(range) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'elt-hover-wrapper';
+    document.body.appendChild(wrapper);
+    return wrapper;
+}
+
+/**
+ * Updates the position of a hover wrapper to match its range's bounding rect.
+ * Uses merged rectangles to create a proper bounding area.
+ * @param {HTMLDivElement} wrapper - The wrapper element
+ * @param {Range} range - The Range covering the meaning block
+ */
+function updateHoverWrapperPosition(wrapper, range) {
+    const rects = range.getClientRects();
+    if (!rects.length) {
+        wrapper.style.display = 'none';
+        return;
+    }
+
+    // Get merged line rectangles
+    const mergedLines = mergeRectsPerLine(rects);
+    if (mergedLines.length === 0) {
+        wrapper.style.display = 'none';
+        return;
+    }
+
+    // Calculate bounding box that encompasses all lines
+    let minLeft = Infinity, minTop = Infinity;
+    let maxRight = -Infinity, maxBottom = -Infinity;
+
+    for (const line of mergedLines) {
+        minLeft = Math.min(minLeft, line.left);
+        minTop = Math.min(minTop, line.top);
+        maxRight = Math.max(maxRight, line.left + line.width);
+        maxBottom = Math.max(maxBottom, line.top + line.height);
+    }
+
+    wrapper.style.display = 'block';
+    wrapper.style.top = `${minTop + window.scrollY}px`;
+    wrapper.style.left = `${minLeft + window.scrollX}px`;
+    wrapper.style.width = `${maxRight - minLeft}px`;
+    wrapper.style.height = `${maxBottom - minTop}px`;
+}
+
+/**
  * Sets up mouseenter/mouseleave listeners for hover-to-reveal functionality
- * @param {HTMLSpanElement[]} spans - The spans that make up this meaning block
+ * Uses wrapper element for reliable hover detection across whitespace
+ * @param {HTMLDivElement} wrapper - The hover wrapper element
  * @param {object} overlayData - The overlay data to show/hide on hover
  */
-function setupHoverListeners(spans, overlayData) {
-    spans.forEach(span => {
-        span.addEventListener('mouseenter', () => {
-            showIndividualTranslation(overlayData);
-        });
+function setupHoverListeners(wrapper, overlayData) {
+    wrapper.addEventListener('mouseenter', () => {
+        showIndividualTranslation(overlayData);
+    });
 
-        span.addEventListener('mouseleave', (e) => {
-            // Check if we're moving to another span in the same block
-            const relatedTarget = e.relatedTarget;
-            if (relatedTarget && spans.includes(relatedTarget)) {
-                return; // Don't hide when moving within the same block
-            }
-            hideIndividualTranslation(overlayData);
-        });
+    wrapper.addEventListener('mouseleave', () => {
+        hideIndividualTranslation(overlayData);
     });
 }
 
@@ -585,22 +631,25 @@ function renderSegmentations(p, alignedSegments) {
         document.body.appendChild(debugEl);
         p._translationOverlays.push(debugEl);
 
+        // 3. Hover wrapper for reliable hover detection across whitespace
+        const hoverWrapper = createHoverWrapper(range);
+        p._translationOverlays.push(hoverWrapper);
+
         const overlayData = {
             range,
             overlayElement: overlayContainer,
             debugElement: debugEl,
+            hoverWrapper: hoverWrapper,  // Store wrapper for position updates
             type: segment.type,
             colorIndex: index % SEGMENT_COLOR_PALETTE.length,
             translation: segment.translation,
-            spans: spans || []  // Store spans for hover detection
+            spans: spans || []  // Store spans for navigation
         };
 
         activeOverlays.push(overlayData);
 
-        // Setup hover listeners for individual translation reveal
-        if (spans && spans.length > 0) {
-            setupHoverListeners(spans, overlayData);
-        }
+        // Setup hover listeners on the wrapper element
+        setupHoverListeners(hoverWrapper, overlayData);
     });
 
     requestAnimationFrame(updateOverlayPositions);
@@ -754,6 +803,11 @@ function updateOverlayPositions() {
                 box.style.height = `${line.height}px`;
                 item.debugElement.appendChild(box);
             }
+        }
+
+        // Update hover wrapper position
+        if (item.hoverWrapper) {
+            updateHoverWrapperPosition(item.hoverWrapper, item.range);
         }
     });
 }
