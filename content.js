@@ -1327,31 +1327,77 @@ if (document.readyState === 'loading') {
 
 // Shadowing state machine
 const shadowingState = {
-    isPausing: false,           // Currently in a pause
+    // Core state
+    isActive: false,            // Shadowing mode is running (polling active)
+    isPaused: false,            // Currently in a shadowing pause
+
+    // Pause management
     pauseStartTime: 0,          // When the pause started
     pauseDuration: 0,           // Total pause duration in ms
     pauseTimer: null,           // setTimeout reference for auto-resume
+
+    // Block tracking
     currentBlockIndex: -1,      // Index of the block being shadowed
+    lastBlockIndex: -1,         // Last block we were in (for boundary detection)
     currentRepetition: 1,       // Current repetition count
-    lastHighlightedC: -1,       // Last highlighted word c value (for boundary detection)
+
+    // Polling
+    pollInterval: null,         // setInterval reference for position polling
+
+    // UI
     countdownElement: null,     // Reference to countdown timer element
     countdownInterval: null     // Interval for updating countdown display
 };
+
+// Polling frequency for checking highlight position
+const SHADOWING_POLL_MS = 50;
 
 // Words per minute estimate for calculating pause duration
 const SHADOWING_WPM = 150;
 
 /**
- * Gets the current playback rate from the ElevenLabs audio element.
+ * Finds all audio/video elements on the page.
+ * @returns {HTMLMediaElement|null}
+ */
+function findAudioElement() {
+    // Try audio first
+    const audio = document.querySelector('audio');
+    if (audio) return audio;
+
+    // Try video (some players use video elements)
+    const video = document.querySelector('video');
+    if (video) return video;
+
+    // Try finding by source
+    const mediaSource = document.querySelector('source[type*="audio"]');
+    if (mediaSource && mediaSource.parentElement) {
+        return mediaSource.parentElement;
+    }
+
+    return null;
+}
+
+/**
+ * Checks if audio is currently playing.
+ * @returns {boolean}
+ */
+function isAudioPlaying() {
+    const media = findAudioElement();
+    if (media) {
+        return !media.paused && !media.ended;
+    }
+    return false;
+}
+
+/**
+ * Gets the current playback rate from the audio element.
  * @returns {number} Playback rate (1.0 = normal speed)
  */
 function getPlaybackRate() {
-    // Try to find the audio element
-    const audio = document.querySelector('audio');
-    if (audio && audio.playbackRate) {
-        return audio.playbackRate;
+    const media = findAudioElement();
+    if (media && media.playbackRate) {
+        return media.playbackRate;
     }
-    // Default to 1.0 if not found
     return 1.0;
 }
 
@@ -1391,20 +1437,19 @@ function calculatePauseDuration(blockIndex, boundaries) {
     const wordCount = wordsInBlock.length || 1;
 
     // Calculate base duration: (word count / WPM) * 60 * 1000 = ms
-    // Then multiply by pause speed setting
     const baseDurationMs = (wordCount / SHADOWING_WPM) * 60 * 1000;
     const playbackRate = getPlaybackRate();
 
-    // Adjust for playback rate: faster playback = longer relative pause
-    // Multiply by pause speed setting from config
+    // Adjust for playback rate and pause speed setting
     const adjustedDuration = (baseDurationMs / playbackRate) * CONFIG.shadowingPauseSpeed;
 
-    Logger.debug('Pause duration calculation:', {
+    Logger.debug('Shadowing: Pause duration calculation', {
+        blockIndex,
         wordCount,
-        baseDurationMs,
+        baseDurationMs: Math.round(baseDurationMs),
         playbackRate,
         pauseSpeed: CONFIG.shadowingPauseSpeed,
-        adjustedDuration
+        adjustedDuration: Math.round(adjustedDuration)
     });
 
     // Minimum 500ms, maximum 30 seconds
@@ -1412,40 +1457,75 @@ function calculatePauseDuration(blockIndex, boundaries) {
 }
 
 /**
- * Pauses the ElevenLabs audio playback.
+ * Pauses the audio playback with verification.
  * @returns {boolean} True if successfully paused
  */
-function pauseAudio() {
-    // Try direct audio element control first
-    const audio = document.querySelector('audio');
-    if (audio && !audio.paused) {
-        audio.pause();
-        Logger.log('Shadowing: Paused audio via element');
-        return true;
+function pauseAudioWithVerify() {
+    const media = findAudioElement();
+
+    if (media) {
+        // Already paused?
+        if (media.paused) {
+            Logger.debug('Shadowing: Audio already paused');
+            return true;
+        }
+
+        // Try to pause
+        media.pause();
+
+        // Verify it worked
+        if (media.paused) {
+            Logger.log('Shadowing: Paused audio via media element');
+            return true;
+        } else {
+            Logger.warn('Shadowing: media.pause() called but audio still playing');
+        }
     }
 
     // Fallback: click the play/pause button
     const playPauseBtn = findPlayPauseButton();
     if (playPauseBtn) {
         playPauseBtn.click();
-        Logger.log('Shadowing: Paused audio via button');
+        Logger.log('Shadowing: Clicked play/pause button to pause');
+
+        // Give it a moment to take effect
+        setTimeout(() => {
+            const stillPlaying = isAudioPlaying();
+            if (stillPlaying) {
+                Logger.warn('Shadowing: Button click did not pause audio');
+            }
+        }, 100);
+
         return true;
     }
 
-    Logger.warn('Shadowing: Could not find audio control to pause');
+    Logger.error('Shadowing: Could not find any audio control to pause');
     return false;
 }
 
 /**
- * Resumes the ElevenLabs audio playback.
+ * Resumes the audio playback.
  * @returns {boolean} True if successfully resumed
  */
-function resumeAudio() {
-    // Try direct audio element control first
-    const audio = document.querySelector('audio');
-    if (audio && audio.paused) {
-        audio.play();
-        Logger.log('Shadowing: Resumed audio via element');
+function resumeAudioWithVerify() {
+    const media = findAudioElement();
+
+    if (media) {
+        // Already playing?
+        if (!media.paused) {
+            Logger.debug('Shadowing: Audio already playing');
+            return true;
+        }
+
+        // Try to play
+        const playPromise = media.play();
+        if (playPromise) {
+            playPromise.catch(err => {
+                Logger.warn('Shadowing: play() rejected:', err.message);
+            });
+        }
+
+        Logger.log('Shadowing: Resumed audio via media element');
         return true;
     }
 
@@ -1453,11 +1533,11 @@ function resumeAudio() {
     const playPauseBtn = findPlayPauseButton();
     if (playPauseBtn) {
         playPauseBtn.click();
-        Logger.log('Shadowing: Resumed audio via button');
+        Logger.log('Shadowing: Clicked play/pause button to resume');
         return true;
     }
 
-    Logger.warn('Shadowing: Could not find audio control to resume');
+    Logger.error('Shadowing: Could not find any audio control to resume');
     return false;
 }
 
@@ -1490,19 +1570,28 @@ function findPlayPauseButton() {
 }
 
 /**
+ * Gets the current block index based on the highlighted word.
+ * @returns {number} Block index or -1 if not found
+ */
+function getCurrentBlockFromHighlight() {
+    const activeSpan = getActiveHighlightSpan();
+    if (!activeSpan) return -1;
+
+    const currentC = parseInt(activeSpan.getAttribute('c'), 10);
+    if (isNaN(currentC)) return -1;
+
+    const boundaries = getShadowingBoundaries();
+    if (boundaries.length === 0) return -1;
+
+    return findBlockIndex(boundaries, currentC);
+}
+
+/**
  * Creates or updates the countdown timer display.
  * @param {number} remainingMs - Remaining time in milliseconds
  */
 function updateCountdownDisplay(remainingMs) {
-    // Only show countdown in debug mode
-    if (!CONFIG.debugClauses) {
-        if (shadowingState.countdownElement) {
-            shadowingState.countdownElement.remove();
-            shadowingState.countdownElement = null;
-        }
-        return;
-    }
-
+    // Always show countdown when shadowing is paused (changed from debug-only)
     if (!shadowingState.countdownElement) {
         shadowingState.countdownElement = document.createElement('div');
         shadowingState.countdownElement.id = 'shadowing-countdown';
@@ -1514,7 +1603,7 @@ function updateCountdownDisplay(remainingMs) {
     const repInfo = CONFIG.shadowingRepetitions > 1
         ? ` (${shadowingState.currentRepetition}/${CONFIG.shadowingRepetitions})`
         : '';
-    shadowingState.countdownElement.textContent = `Shadowing: ${seconds}s${repInfo}`;
+    shadowingState.countdownElement.textContent = `Repeat: ${seconds}s${repInfo}`;
     shadowingState.countdownElement.classList.add('visible');
 }
 
@@ -1532,7 +1621,53 @@ function hideCountdownDisplay() {
 }
 
 /**
- * Starts a shadowing pause after the current block.
+ * Core polling function - checks highlight position and triggers pauses.
+ */
+function shadowingPollTick() {
+    // Skip if we're in a pause
+    if (shadowingState.isPaused) return;
+
+    // Skip if audio isn't playing
+    if (!isAudioPlaying()) {
+        Logger.debug('Shadowing: Audio not playing, skipping poll');
+        return;
+    }
+
+    const currentBlockIndex = getCurrentBlockFromHighlight();
+
+    // No valid block found
+    if (currentBlockIndex === -1) {
+        return;
+    }
+
+    // First time seeing a block - just record it
+    if (shadowingState.lastBlockIndex === -1) {
+        shadowingState.lastBlockIndex = currentBlockIndex;
+        Logger.log('Shadowing: Started tracking at block', currentBlockIndex);
+        return;
+    }
+
+    // Check if we've moved to a new block
+    if (currentBlockIndex !== shadowingState.lastBlockIndex) {
+        // We just crossed from lastBlockIndex into currentBlockIndex
+        // The PREVIOUS block just finished - that's what we want to pause after
+        const finishedBlockIndex = shadowingState.lastBlockIndex;
+
+        Logger.log('Shadowing: Block boundary crossed!', {
+            finishedBlock: finishedBlockIndex,
+            newBlock: currentBlockIndex
+        });
+
+        // Update tracking
+        shadowingState.lastBlockIndex = currentBlockIndex;
+
+        // Start the pause for the block that just finished
+        startShadowingPause(finishedBlockIndex);
+    }
+}
+
+/**
+ * Starts a shadowing pause after the specified block.
  * @param {number} blockIndex - Index of the block that just finished
  */
 function startShadowingPause(blockIndex) {
@@ -1543,21 +1678,25 @@ function startShadowingPause(blockIndex) {
         return;
     }
 
-    // Pause the audio
-    pauseAudio();
+    // FIRST: Pause the audio immediately
+    const pauseSuccess = pauseAudioWithVerify();
+    if (!pauseSuccess) {
+        Logger.error('Shadowing: Failed to pause audio, aborting pause');
+        return;
+    }
 
     // Calculate pause duration
     const duration = calculatePauseDuration(blockIndex, boundaries);
 
     // Update state
-    shadowingState.isPausing = true;
+    shadowingState.isPaused = true;
     shadowingState.pauseStartTime = Date.now();
     shadowingState.pauseDuration = duration;
     shadowingState.currentBlockIndex = blockIndex;
 
     Logger.log('Shadowing: Starting pause', {
         blockIndex,
-        duration,
+        duration: Math.round(duration),
         repetition: shadowingState.currentRepetition,
         totalRepetitions: CONFIG.shadowingRepetitions
     });
@@ -1586,7 +1725,7 @@ function startShadowingPause(blockIndex) {
 function onPauseComplete() {
     hideCountdownDisplay();
 
-    if (!shadowingState.isPausing) return;
+    if (!shadowingState.isPaused) return;
 
     const boundaries = getShadowingBoundaries();
     const blockIndex = shadowingState.currentBlockIndex;
@@ -1600,22 +1739,28 @@ function onPauseComplete() {
             total: CONFIG.shadowingRepetitions
         });
 
-        // Seek back to start of current block and resume
+        // Seek back to start of current block
         if (blockIndex >= 0 && blockIndex < boundaries.length) {
             seekToSpan(boundaries[blockIndex].firstSpan);
+            // Update lastBlockIndex so we don't immediately trigger another pause
+            shadowingState.lastBlockIndex = blockIndex;
         }
 
-        shadowingState.isPausing = false;
-        resumeAudio();
+        shadowingState.isPaused = false;
+
+        // Small delay before resuming to let seek take effect
+        setTimeout(() => {
+            resumeAudioWithVerify();
+        }, 100);
         return;
     }
 
-    // All repetitions complete - move to next block
+    // All repetitions complete - just resume (we're already at start of next block)
     shadowingState.currentRepetition = 1;
-    shadowingState.isPausing = false;
+    shadowingState.isPaused = false;
 
     Logger.log('Shadowing: Pause complete, resuming playback');
-    resumeAudio();
+    resumeAudioWithVerify();
 }
 
 /**
@@ -1623,7 +1768,7 @@ function onPauseComplete() {
  * @param {boolean} resumePlayback - Whether to resume audio after canceling
  */
 function cancelShadowingPause(resumePlayback = false) {
-    if (!shadowingState.isPausing) return;
+    if (!shadowingState.isPaused) return;
 
     Logger.log('Shadowing: Canceling pause');
 
@@ -1635,11 +1780,11 @@ function cancelShadowingPause(resumePlayback = false) {
 
     hideCountdownDisplay();
 
-    shadowingState.isPausing = false;
+    shadowingState.isPaused = false;
     shadowingState.currentRepetition = 1;
 
     if (resumePlayback) {
-        resumeAudio();
+        resumeAudioWithVerify();
     }
 }
 
@@ -1663,9 +1808,15 @@ function replayCurrentBlock() {
     // Reset repetition counter
     shadowingState.currentRepetition = 1;
 
+    // Update tracking so we don't immediately trigger another pause
+    shadowingState.lastBlockIndex = blockIndex;
+
     // Seek to start of block and resume
     seekToSpan(boundaries[blockIndex].firstSpan);
-    resumeAudio();
+
+    setTimeout(() => {
+        resumeAudioWithVerify();
+    }, 100);
 }
 
 /**
@@ -1685,104 +1836,79 @@ function skipToNextBlock() {
 
     if (nextIndex >= boundaries.length) {
         Logger.log('Shadowing: Reached end of content');
-        resumeAudio();
+        resumeAudioWithVerify();
         return;
     }
 
-    // Seek to next block and resume
+    // Update tracking
     shadowingState.currentBlockIndex = nextIndex;
+    shadowingState.lastBlockIndex = nextIndex;
+
+    // Seek to next block and resume
     seekToSpan(boundaries[nextIndex].firstSpan);
-    resumeAudio();
+
+    setTimeout(() => {
+        resumeAudioWithVerify();
+    }, 100);
 }
 
 /**
- * Monitors highlight changes to detect block boundary crossings.
- * This is called by a MutationObserver watching for class changes.
+ * Starts shadowing mode - begins polling for block boundaries.
  */
-function checkForBlockBoundary() {
-    if (!CONFIG.shadowingEnabled || shadowingState.isPausing) return;
-
-    const activeSpan = getActiveHighlightSpan();
-    if (!activeSpan) return;
-
-    const currentC = parseInt(activeSpan.getAttribute('c'), 10);
-    if (isNaN(currentC)) return;
-
-    // Skip if same position as last check
-    if (currentC === shadowingState.lastHighlightedC) return;
-
-    const previousC = shadowingState.lastHighlightedC;
-    shadowingState.lastHighlightedC = currentC;
-
-    // Don't trigger on first highlight
-    if (previousC === -1) return;
-
-    const boundaries = getShadowingBoundaries();
-    if (boundaries.length === 0) return;
-
-    // Find which block the previous position was in
-    const prevBlockIndex = findBlockIndex(boundaries, previousC);
-    const currentBlockIndex = findBlockIndex(boundaries, currentC);
-
-    // Check if we crossed from one block to another
-    if (prevBlockIndex !== -1 && currentBlockIndex !== prevBlockIndex) {
-        // We just moved from block prevBlockIndex to a new block
-        // The previous block just finished - start shadowing pause
-        Logger.debug('Shadowing: Block boundary crossed', {
-            prevBlock: prevBlockIndex,
-            currentBlock: currentBlockIndex,
-            prevC: previousC,
-            currentC: currentC
-        });
-
-        // Set the current block to the one that just finished
-        shadowingState.currentBlockIndex = prevBlockIndex;
-        startShadowingPause(prevBlockIndex);
+function startShadowingMode() {
+    if (shadowingState.isActive) {
+        Logger.debug('Shadowing: Already active');
+        return;
     }
+
+    Logger.log('Shadowing: Starting mode');
+
+    shadowingState.isActive = true;
+    shadowingState.lastBlockIndex = -1;
+    shadowingState.currentRepetition = 1;
+
+    // Start polling
+    shadowingState.pollInterval = setInterval(shadowingPollTick, SHADOWING_POLL_MS);
+
+    // Log boundaries for debugging
+    const boundaries = getShadowingBoundaries();
+    Logger.log('Shadowing: Found', boundaries.length, 'blocks of type:', CONFIG.shadowingBlockType);
 }
 
-// Set up MutationObserver to watch for highlight changes
-let shadowingObserver = null;
-
-function setupShadowingObserver() {
-    if (shadowingObserver) {
-        shadowingObserver.disconnect();
+/**
+ * Stops shadowing mode - cleans up all state.
+ */
+function stopShadowingMode() {
+    if (!shadowingState.isActive) {
+        Logger.debug('Shadowing: Already inactive');
+        return;
     }
 
-    const contentDiv = document.getElementById('preview-content');
-    if (!contentDiv) return;
+    Logger.log('Shadowing: Stopping mode');
 
-    shadowingObserver = new MutationObserver((mutations) => {
-        // Check if any mutation involves class changes on spans
-        for (const mutation of mutations) {
-            if (mutation.type === 'attributes' &&
-                mutation.attributeName === 'class' &&
-                mutation.target.tagName === 'SPAN' &&
-                mutation.target.hasAttribute('c')) {
-                // A span's class changed - check for boundary crossing
-                checkForBlockBoundary();
-                break;
-            }
-        }
-    });
+    // Stop polling
+    if (shadowingState.pollInterval) {
+        clearInterval(shadowingState.pollInterval);
+        shadowingState.pollInterval = null;
+    }
 
-    shadowingObserver.observe(contentDiv, {
-        attributes: true,
-        attributeFilter: ['class'],
-        subtree: true
-    });
+    // Cancel any active pause
+    cancelShadowingPause(false);
 
-    Logger.log('Shadowing: Observer set up');
+    // Reset state
+    shadowingState.isActive = false;
+    shadowingState.lastBlockIndex = -1;
+    shadowingState.currentBlockIndex = -1;
+    shadowingState.currentRepetition = 1;
+}
+
+// Legacy function names for compatibility
+function setupShadowingObserver() {
+    startShadowingMode();
 }
 
 function cleanupShadowingObserver() {
-    if (shadowingObserver) {
-        shadowingObserver.disconnect();
-        shadowingObserver = null;
-    }
-    cancelShadowingPause(false);
-    shadowingState.lastHighlightedC = -1;
-    Logger.log('Shadowing: Observer cleaned up');
+    stopShadowingMode();
 }
 
 // --- Keyboard Navigation ---
@@ -2186,7 +2312,7 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
 
         // If shadowing is active and we're in a pause, cancel the pause
-        if (CONFIG.shadowingEnabled && shadowingState.isPausing) {
+        if (CONFIG.shadowingEnabled && shadowingState.isPaused) {
             Logger.log("Spacebar: Canceling shadowing pause");
             cancelShadowingPause(false);
             // Audio is already paused, user can press spacebar again to resume
@@ -2257,7 +2383,7 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
 
         // If shadowing is active and we're in a pause, replay current block
-        if (CONFIG.shadowingEnabled && shadowingState.isPausing) {
+        if (CONFIG.shadowingEnabled && shadowingState.isPaused) {
             Logger.log("Left arrow: Replaying block during shadowing pause");
             replayCurrentBlock();
             return;
@@ -2272,7 +2398,7 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
 
         // If shadowing is active and we're in a pause, skip to next block
-        if (CONFIG.shadowingEnabled && shadowingState.isPausing) {
+        if (CONFIG.shadowingEnabled && shadowingState.isPaused) {
             Logger.log("Right arrow: Skipping to next block during shadowing pause");
             skipToNextBlock();
             return;
