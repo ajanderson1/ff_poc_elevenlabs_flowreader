@@ -1,6 +1,7 @@
 # Issue #16: Translation overlays appear on top of navigation bar
 
 **Issue Link:** https://github.com/ajanderson1/elevenlabs_flowreader/issues/16
+**PR:** https://github.com/ajanderson1/elevenlabs_flowreader/pull/18
 
 ## Problem
 
@@ -8,37 +9,26 @@ Translation overlays appear on top of the ElevenLabs navigation bar (with playba
 
 ## Root Cause Analysis
 
-1. **CSS z-index too high**: `styles.css:33` and `styles.css:207` set `z-index: 10000` on `.translation-overlay` and `.translation-overlay-container`
-2. **DOM placement**: `content.js:545` appends overlays to `document.body` rather than within the content container (`#preview-content`)
+1. **DOM placement was the real issue**: Overlays were appended to `document.body` instead of inside the content container. This placed them in a different stacking context from the original text.
+2. **z-index alone doesn't fix it**: Even with lower z-index, overlays in `document.body` are in a different stacking context than content inside `#preview-content`, so they don't get clipped by the fixed nav bar.
 
-When elements are appended to `document.body` with high z-index, they sit above everything including fixed position navigation bars.
+## Solution (Implemented)
 
-## Solution
+### 1. Move overlays inside `#preview-content`
+- Changed `document.body.appendChild()` to append overlays to `#preview-content`
+- This puts overlays in the same stacking context as the text
+- Overlays now scroll with the content and go behind the fixed nav bar
 
-The fix requires two changes:
+### 2. Add `position: relative` to `#preview-content`
+- Makes `#preview-content` a positioning context for absolutely-positioned overlays
 
-### 1. Lower z-index values
-The translation overlays don't need to be above the navigation bar. They should be visible above the text content but below fixed UI elements like the nav bar.
+### 3. Update position calculations
+- Changed from document-relative (`line.top + window.scrollY`) to container-relative (`line.top - containerRect.top`)
+- Positions are now calculated relative to `#preview-content` instead of the document
 
-### 2. Append overlays within content container (if needed)
-Consider appending overlays within `#preview-content` so they inherit the same stacking context as the text. However, this might affect positioning calculations.
+## Files Modified
 
-**Simpler approach:** Keep overlays in `document.body` but use a lower z-index. The ElevenLabs nav bar likely has a z-index that's reasonable (e.g., 1000 or less), so using z-index: 100-500 should allow overlays to be above content but below the nav.
-
-## Implementation Plan
-
-1. **Change z-index in CSS**:
-   - `.translation-overlay`: change from `10000` to a lower value (e.g., `100`)
-   - `.translation-overlay-container`: change from `10000` to a lower value (e.g., `100`)
-   - `.clause-debug-container`: already at `9990`, lower to `99`
-   - Processing banner at `10001` can stay high since it's a temporary notification
-   - Toggle button at `10000` should stay high to remain accessible
-
-2. **Keep overlay placement in document.body**:
-   - The current positioning logic uses `getBoundingClientRect()` + `window.scrollY/scrollX`
-   - This assumes overlays are direct children of body
-   - Changing container would require recalculating positions relative to new parent
-
-## Files to Modify
-
-- `styles.css`: Update z-index values for overlay classes
+- `styles.css`: Added `position: relative` to `#preview-content`, lowered z-index values
+- `content.js`:
+  - `renderSegmentations()`: Append overlays to `#preview-content` instead of `document.body`
+  - `updateOverlayPositions()`: Calculate positions relative to container rect
