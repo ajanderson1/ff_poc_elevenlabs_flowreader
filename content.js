@@ -90,17 +90,11 @@ const CONFIG = {
 
 // Removed multi-type segmentation constants - now using single Meaning Blocks approach
 
-// Alternating color palette for distinguishing individual segments
-const SEGMENT_COLOR_PALETTE = [
-    { bg: 'rgba(255, 107, 107, 0.35)', border: 'rgba(255, 107, 107, 0.9)' },  // Coral Red
-    { bg: 'rgba(78, 205, 196, 0.35)', border: 'rgba(78, 205, 196, 0.9)' },    // Teal
-    { bg: 'rgba(255, 217, 61, 0.35)', border: 'rgba(255, 217, 61, 0.9)' },    // Yellow
-    { bg: 'rgba(149, 117, 205, 0.35)', border: 'rgba(149, 117, 205, 0.9)' },  // Purple
-    { bg: 'rgba(255, 159, 64, 0.35)', border: 'rgba(255, 159, 64, 0.9)' },    // Orange
-    { bg: 'rgba(102, 187, 106, 0.35)', border: 'rgba(102, 187, 106, 0.9)' },  // Green
-    { bg: 'rgba(66, 165, 245, 0.35)', border: 'rgba(66, 165, 245, 0.9)' },    // Blue
-    { bg: 'rgba(236, 64, 122, 0.35)', border: 'rgba(236, 64, 122, 0.9)' },    // Pink
-];
+// Single color for all meaning blocks - Light Blue
+const MEANING_BLOCK_COLOR = {
+    bg: 'rgba(66, 165, 245, 0.3)',
+    border: 'rgba(66, 165, 245, 0.9)'
+};
 
 // --- State ---
 let isProcessing = false;
@@ -564,24 +558,22 @@ function hideIndividualTranslation(overlayData) {
 /**
  * Wraps meaning block spans in an inline container element.
  * This ensures whitespace between words is part of the hover area.
- * Applies background color from the color palette for visual highlighting.
+ * Applies consistent background color for visual highlighting.
  * @param {HTMLSpanElement[]} spans - The spans that make up this meaning block
- * @param {number} colorIndex - Index into SEGMENT_COLOR_PALETTE for alternating colors
  * @returns {HTMLSpanElement|null} The wrapper element, or null if wrapping failed
  */
-function wrapMeaningBlockSpans(spans, colorIndex = 0) {
+function wrapMeaningBlockSpans(spans) {
     if (!spans || spans.length === 0) return null;
 
     const wrapper = document.createElement('span');
     wrapper.className = 'elt-meaning-block';
 
-    // Apply background color from palette via CSS custom properties
-    const colorPair = SEGMENT_COLOR_PALETTE[colorIndex % SEGMENT_COLOR_PALETTE.length];
-    wrapper.setAttribute('data-bg-color', colorIndex.toString());
-    wrapper.style.setProperty('--block-bg', colorPair.bg);
-    wrapper.style.setProperty('--block-border', colorPair.border);
+    // Apply consistent background color via CSS custom properties
+    wrapper.setAttribute('data-bg-color', 'true');
+    wrapper.style.setProperty('--block-bg', MEANING_BLOCK_COLOR.bg);
+    wrapper.style.setProperty('--block-border', MEANING_BLOCK_COLOR.border);
     // Darker border for dark mode hover
-    wrapper.style.setProperty('--block-border-dark', colorPair.border.replace('0.9', '1'));
+    wrapper.style.setProperty('--block-border-dark', MEANING_BLOCK_COLOR.border.replace('0.9', '1'));
 
     try {
         // Use Range to capture spans AND whitespace between them
@@ -611,8 +603,7 @@ function renderSegmentations(p, alignedSegments) {
         Logger.log(`Creating overlay ${index}:`, segment.type, segment.translation?.substring(0, 30));
 
         // 1. Wrap meaning block spans in inline container (includes whitespace)
-        // Pass color index for alternating background colors
-        const wrapper = wrapMeaningBlockSpans(spans, index);
+        const wrapper = wrapMeaningBlockSpans(spans);
         if (wrapper) {
             p._translationOverlays.push(wrapper);
         }
