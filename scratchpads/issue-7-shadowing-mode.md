@@ -148,3 +148,35 @@ Key changes from original issue (based on comments):
 1. Pause speed range extended to 0.5x - 5.0x (not 0.5x - 2.0x)
 2. Don't change look/feel of play/pause button or translate button
 3. Countdown timer shows during pause (visual feedback mechanism)
+
+## V2 Architecture (Polling-Based)
+
+The initial MutationObserver approach failed because:
+1. Class change events weren't firing reliably
+2. By the time we detected a boundary crossing, audio had already started on the next block
+3. No verification that pause actually worked
+
+**New Approach:**
+
+1. **Polling instead of events**: Use `setInterval` at 50ms to actively check:
+   - Is audio playing? (via `media.paused` property)
+   - What block is currently highlighted? (via `getActiveHighlightSpan()`)
+
+2. **Boundary detection**: Track `lastBlockIndex` and compare to current:
+   - When `currentBlockIndex !== lastBlockIndex`, we crossed a boundary
+   - The PREVIOUS block just finished - pause after it
+
+3. **Audio control with verification**:
+   - Try `media.pause()` first, verify it worked
+   - Fallback to clicking play/pause button
+   - Same for resume: `media.play()` with promise handling
+
+4. **State machine**:
+   - `isActive`: Polling is running
+   - `isPaused`: Currently in a shadowing pause
+   - `lastBlockIndex`: For boundary detection
+   - `currentBlockIndex`: Block we're pausing after
+
+5. **Timing**:
+   - Pause audio IMMEDIATELY when boundary detected
+   - Add small delay (100ms) before resume to let seek operations complete

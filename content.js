@@ -1627,9 +1627,8 @@ function shadowingPollTick() {
     // Skip if we're in a pause
     if (shadowingState.isPaused) return;
 
-    // Skip if audio isn't playing
+    // Skip if audio isn't playing (don't log - would spam every 50ms)
     if (!isAudioPlaying()) {
-        Logger.debug('Shadowing: Audio not playing, skipping poll');
         return;
     }
 
