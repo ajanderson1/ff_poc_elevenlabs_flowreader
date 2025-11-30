@@ -318,3 +318,28 @@ body.elt-translations-visible .elt-meaning-block[data-bg-color] {
 .elt-meaning-block.elt-hovered[data-bg-color] {
     background-color: var(--block-bg);
 }
+
+/* Shadowing Mode - Countdown Timer */
+.shadowing-countdown {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    background-color: #2196F3;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-family: sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    z-index: 10001;
+    box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+}
+
+.shadowing-countdown.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
