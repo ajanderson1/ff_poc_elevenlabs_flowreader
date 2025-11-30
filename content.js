@@ -580,6 +580,29 @@ function unwrapMeaningBlock(wrapper) {
     wrapper.remove();
 }
 
+/**
+ * Temporarily unwraps all meaning block wrappers to restore original DOM structure.
+ * This is needed before triggering ElevenLabs audio resume to avoid React DOM conflicts.
+ * @returns {boolean} True if any wrappers were unwrapped
+ */
+function temporarilyUnwrapAllMeaningBlocks() {
+    const wrappers = document.querySelectorAll('.elt-meaning-block');
+    if (wrappers.length === 0) return false;
+
+    Logger.debug("Shadowing: Temporarily unwrapping", wrappers.length, "meaning blocks");
+
+    wrappers.forEach(wrapper => {
+        unwrapMeaningBlock(wrapper);
+    });
+
+    // Clear wrapper references from activeOverlays
+    activeOverlays.forEach(overlay => {
+        overlay.wrapper = null;
+    });
+
+    return true;
+}
+
 function clearOverlays(p) {
     if (p._translationOverlays) {
         p._translationOverlays.forEach(el => {
@@ -1345,6 +1368,7 @@ function pauseAudio() {
 /**
  * Resumes the audio playback by clicking the play/pause button.
  * Only clicks if audio is currently paused.
+ * Temporarily unwraps meaning blocks to avoid React DOM conflicts.
  */
 function resumeAudio() {
     if (isAudioPlaying()) {
@@ -1352,10 +1376,22 @@ function resumeAudio() {
         return;
     }
 
+    // Unwrap meaning blocks before resuming to avoid React DOM conflicts
+    // ElevenLabs' React code expects the original DOM structure
+    const hadWrappers = temporarilyUnwrapAllMeaningBlocks();
+
     const btn = findPlayPauseButton();
     if (btn) {
         btn.click();
         Logger.debug("Shadowing: Audio resumed via button click");
+
+        // If we unwrapped, trigger a re-render after React settles
+        if (hadWrappers) {
+            setTimeout(() => {
+                Logger.debug("Shadowing: Triggering re-render after resume");
+                reRenderAll();
+            }, 500);
+        }
     } else {
         Logger.warn("Shadowing: Could not find play/pause button to resume audio");
     }
