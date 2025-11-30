@@ -1233,31 +1233,112 @@ function findBlockIndex(boundaries, position) {
 }
 
 /**
+ * Get the currently highlighted (active) span from ElevenLabs
+ * @returns {HTMLSpanElement|null} The span with active highlighting
+ */
+function getActiveHighlightSpan() {
+    // ElevenLabs uses 'active' class for the currently playing word
+    return document.querySelector('#preview-content span.active[c]');
+}
+
+/**
+ * Manually update the highlight to match the target span
+ * This is a fallback when synthetic events don't update React's state
+ * @param {HTMLSpanElement} targetSpan - The span that should be highlighted
+ */
+function forceHighlightUpdate(targetSpan) {
+    if (!targetSpan) return;
+
+    // Remove 'active' class from any currently highlighted span
+    const currentActive = getActiveHighlightSpan();
+    if (currentActive) {
+        currentActive.classList.remove('active');
+    }
+
+    // Add 'active' class to the target span
+    targetSpan.classList.add('active');
+    Logger.log("Navigation: manually updated highlight to c=" + targetSpan.getAttribute('c'));
+}
+
+/**
  * Seek audio to a specific span by simulating user interaction
  * Uses full event sequence to ensure ElevenLabs updates highlighting
+ * Includes verification and fallback to ensure highlighting stays in sync
+ * @param {HTMLSpanElement} span - The span to seek to
  */
 function seekToSpan(span) {
     if (!span) return;
 
-    const c = span.getAttribute('c');
-    Logger.log("Navigation: seeking to c=" + c);
+    const targetC = span.getAttribute('c');
+    Logger.log("Navigation: seeking to c=" + targetC);
+
+    // Get coordinates for realistic event positioning
+    const rect = span.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
 
     // Try dispatching a full pointer/mouse event sequence
     // ElevenLabs may listen for these rather than just 'click'
     const eventOptions = {
         bubbles: true,
         cancelable: true,
-        view: window
+        view: window,
+        clientX,
+        clientY,
+        screenX: clientX,
+        screenY: clientY
     };
 
     // Dispatch pointer events (modern approach)
-    span.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1 }));
-    span.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1 }));
+    span.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
+    span.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
 
     // Also dispatch mouse events for compatibility
-    span.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-    span.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-    span.dispatchEvent(new MouseEvent('click', eventOptions));
+    span.dispatchEvent(new MouseEvent('mousedown', { ...eventOptions, button: 0 }));
+    span.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, button: 0 }));
+    span.dispatchEvent(new MouseEvent('click', { ...eventOptions, button: 0 }));
+
+    // Verify and fix highlighting after a brief delay
+    // ElevenLabs may take a moment to update React state
+    setTimeout(() => {
+        verifyAndFixHighlight(span, targetC);
+    }, 50);
+}
+
+/**
+ * Verify that highlighting updated correctly, fix if needed
+ * @param {HTMLSpanElement} targetSpan - The span we seeked to
+ * @param {string} targetC - The expected c value
+ */
+function verifyAndFixHighlight(targetSpan, targetC) {
+    const activeSpan = getActiveHighlightSpan();
+    const activeC = activeSpan ? activeSpan.getAttribute('c') : null;
+
+    if (activeC === targetC) {
+        Logger.debug("Navigation: highlight verified at c=" + targetC);
+        return; // Highlight is correct, nothing to do
+    }
+
+    // Highlight didn't update - try a second event dispatch with focus
+    Logger.debug("Navigation: highlight mismatch (expected c=" + targetC + ", got c=" + activeC + "), retrying...");
+
+    // Focus the span first, then click
+    targetSpan.focus();
+    targetSpan.click();
+
+    // Final verification after another short delay
+    setTimeout(() => {
+        const finalActiveSpan = getActiveHighlightSpan();
+        const finalActiveC = finalActiveSpan ? finalActiveSpan.getAttribute('c') : null;
+
+        if (finalActiveC !== targetC) {
+            // Events still didn't work - force the highlight update manually
+            Logger.debug("Navigation: synthetic events failed, forcing highlight update");
+            forceHighlightUpdate(targetSpan);
+        } else {
+            Logger.debug("Navigation: highlight corrected to c=" + targetC);
+        }
+    }, 50);
 }
 
 /**
