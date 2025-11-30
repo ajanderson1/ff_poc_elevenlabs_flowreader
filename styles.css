@@ -1,9 +1,11 @@
 /* Increase line height to make room for translations above each line */
 /* Remove ElevenLabs paragraph background highlighting */
 
-/* Make #preview-content a positioning context so overlays scroll with content */
+/* Make #preview-content a stacking context so overlays are contained within it
+   and render below the fixed nav bar when scrolling */
 #preview-content {
     position: relative;
+    isolation: isolate;  /* Creates stacking context without changing z-index */
 }
 
 #preview-content p {
