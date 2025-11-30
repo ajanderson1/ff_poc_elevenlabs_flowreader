@@ -272,9 +272,7 @@ html[data-theme="light"] .translation-line {
     cursor: pointer;
     border-radius: 3px;
     padding: 1px 0;
-    /* Background color set via inline style from JS with color index */
-    /* Transition for smooth hover effects */
-    transition: border-bottom 0.15s ease;
+    /* Background color set via inline style from JS */
 }
 
 /* Show backgrounds when "Show Meaning Blocks" toggle is enabled */
@@ -287,36 +285,7 @@ body.elt-translations-visible .elt-meaning-block[data-bg-color] {
     background-color: var(--block-bg);
 }
 
-/* Hover state: show darker underline for visual feedback */
-body.elt-show-highlighting .elt-meaning-block:hover,
-body.elt-translations-visible .elt-meaning-block:hover,
-.elt-meaning-block.elt-hovered {
-    border-bottom: 2.5px solid var(--block-border, currentColor);
-}
-
-/* Also show background when hovered (for individual translations) */
+/* Show background when hovered (for individual translations) */
 .elt-meaning-block.elt-hovered[data-bg-color] {
     background-color: var(--block-bg);
-}
-
-/* Dark mode hover underline */
-@media (prefers-color-scheme: dark) {
-    body.elt-show-highlighting .elt-meaning-block:hover,
-    body.elt-translations-visible .elt-meaning-block:hover,
-    .elt-meaning-block.elt-hovered {
-        border-bottom-color: var(--block-border-dark, rgba(255, 255, 255, 0.8));
-    }
-}
-
-body.dark .elt-meaning-block:hover,
-body.dark-mode .elt-meaning-block:hover,
-body[data-theme="dark"] .elt-meaning-block:hover,
-html.dark .elt-meaning-block:hover,
-html[data-theme="dark"] .elt-meaning-block:hover,
-body.dark .elt-meaning-block.elt-hovered,
-body.dark-mode .elt-meaning-block.elt-hovered,
-body[data-theme="dark"] .elt-meaning-block.elt-hovered,
-html.dark .elt-meaning-block.elt-hovered,
-html[data-theme="dark"] .elt-meaning-block.elt-hovered {
-    border-bottom-color: var(--block-border-dark, rgba(255, 255, 255, 0.8));
 }
