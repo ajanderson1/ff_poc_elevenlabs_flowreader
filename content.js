@@ -1277,43 +1277,106 @@ function updateHighlightingVisibility(partitioningEnabled) {
 // --- Shadowing Module ---
 
 /**
- * Gets the audio element used by ElevenLabs Reader.
- * @returns {HTMLAudioElement|null} The audio element or null if not found
+ * Finds the ElevenLabs play/pause button.
+ * @returns {HTMLElement|null} The play/pause button or null if not found
  */
-function getAudioElement() {
-    // ElevenLabs Reader uses an audio element for playback
-    return document.querySelector('audio');
+function findPlayPauseButton() {
+    const selectors = [
+        '[data-testid="play-pause-button"]',
+        '[aria-label="Play"]',
+        '[aria-label="Pause"]',
+        'button[aria-label*="Play"]',
+        'button[aria-label*="Pause"]',
+        'button[class*="play" i]',
+        'button[class*="pause" i]',
+        '[class*="PlayPause"]',
+        '[class*="playPause"]'
+    ];
+
+    for (const selector of selectors) {
+        try {
+            const btn = document.querySelector(selector);
+            if (btn) return btn;
+        } catch (err) {
+            // Ignore selector errors
+        }
+    }
+    return null;
 }
 
 /**
- * Pauses the audio playback.
+ * Checks if audio is currently playing by examining the play/pause button state.
+ * @returns {boolean} True if playing, false if paused
+ */
+function isAudioPlaying() {
+    const btn = findPlayPauseButton();
+    if (!btn) return false;
+
+    // Check aria-label - if it says "Pause", audio is playing
+    const ariaLabel = btn.getAttribute('aria-label');
+    if (ariaLabel) {
+        return ariaLabel.toLowerCase().includes('pause');
+    }
+
+    // Fallback: check for pause icon class
+    return btn.className.toLowerCase().includes('pause') ||
+           btn.innerHTML.toLowerCase().includes('pause');
+}
+
+/**
+ * Pauses the audio playback by clicking the play/pause button.
+ * Only clicks if audio is currently playing.
  */
 function pauseAudio() {
-    const audio = getAudioElement();
-    if (audio) {
-        audio.pause();
-        Logger.debug("Shadowing: Audio paused");
+    if (!isAudioPlaying()) {
+        Logger.debug("Shadowing: Audio already paused");
+        return;
+    }
+
+    const btn = findPlayPauseButton();
+    if (btn) {
+        btn.click();
+        Logger.debug("Shadowing: Audio paused via button click");
+    } else {
+        Logger.warn("Shadowing: Could not find play/pause button to pause audio");
     }
 }
 
 /**
- * Resumes the audio playback.
+ * Resumes the audio playback by clicking the play/pause button.
+ * Only clicks if audio is currently paused.
  */
 function resumeAudio() {
-    const audio = getAudioElement();
-    if (audio) {
-        audio.play();
-        Logger.debug("Shadowing: Audio resumed");
+    if (isAudioPlaying()) {
+        Logger.debug("Shadowing: Audio already playing");
+        return;
+    }
+
+    const btn = findPlayPauseButton();
+    if (btn) {
+        btn.click();
+        Logger.debug("Shadowing: Audio resumed via button click");
+    } else {
+        Logger.warn("Shadowing: Could not find play/pause button to resume audio");
     }
 }
 
 /**
- * Gets the current playback rate of the audio element.
+ * Gets the current playback rate.
+ * Note: ElevenLabs may store this in their UI state, falling back to 1.0
  * @returns {number} The playback rate (default 1.0)
  */
 function getPlaybackRate() {
-    const audio = getAudioElement();
-    return audio ? audio.playbackRate : 1.0;
+    // Try to find playback rate from ElevenLabs UI (e.g., speed selector)
+    const speedSelector = document.querySelector('[class*="speed"]');
+    if (speedSelector) {
+        const speedText = speedSelector.textContent;
+        const match = speedText.match(/([\d.]+)x/);
+        if (match) {
+            return parseFloat(match[1]);
+        }
+    }
+    return 1.0;
 }
 
 /**
@@ -1675,31 +1738,52 @@ function checkForBlockBoundary() {
         ? getSentenceBoundaries()
         : getBlockBoundaries();
 
-    if (boundaries.length === 0) return;
+    if (boundaries.length === 0) {
+        Logger.debug("Shadowing: No boundaries available");
+        return;
+    }
 
     const currentPos = getCurrentPlaybackPosition();
-    if (currentPos < 0) return;
+    if (currentPos < 0) {
+        Logger.debug("Shadowing: Could not determine playback position");
+        return;
+    }
 
-    // Find current block
+    // Find which block contains the current position
     const currentBlockIndex = findBlockIndex(boundaries, currentPos);
     if (currentBlockIndex < 0) return;
 
     const currentBlock = boundaries[currentBlockIndex];
 
-    // Check if we've moved past the end of a block
-    // This happens when currentPos is at the start of the next block
-    if (shadowingState.lastBlockEndC >= 0 && currentPos > shadowingState.lastBlockEndC) {
-        // We've crossed a boundary - trigger pause for the previous block
-        const prevBlockIndex = currentBlockIndex > 0 ? currentBlockIndex - 1 : 0;
+    Logger.debug("Shadowing: Position check", {
+        currentPos,
+        currentBlockIndex,
+        blockRange: `${currentBlock.startC}-${currentBlock.endC}`,
+        lastBlockEndC: shadowingState.lastBlockEndC,
+        lastPausedBlock: shadowingState.currentBlockIndex
+    });
 
-        // Only trigger if we haven't already paused for this block
-        if (prevBlockIndex !== shadowingState.currentBlockIndex || !shadowingState.isInPause) {
-            shadowingState.isWaitingForBlockEnd = false;
-            startShadowingPause(prevBlockIndex, boundaries);
+    // Check if we've crossed into a new block
+    // This triggers when currentPos is in a block AFTER the one we were tracking
+    if (shadowingState.lastBlockEndC >= 0) {
+        // We had a previous block tracked
+        const wasInBlock = boundaries.findIndex(b => b.endC === shadowingState.lastBlockEndC);
+
+        if (wasInBlock >= 0 && currentBlockIndex > wasInBlock) {
+            // We've moved from wasInBlock to currentBlockIndex
+            // Pause for the block we just finished (wasInBlock)
+            Logger.log("Shadowing: Crossed from block", wasInBlock, "to block", currentBlockIndex);
+
+            // Only trigger if we haven't already paused for this block
+            if (wasInBlock !== shadowingState.currentBlockIndex) {
+                shadowingState.isWaitingForBlockEnd = false;
+                startShadowingPause(wasInBlock, boundaries);
+                return; // Don't update tracking until pause is done
+            }
         }
     }
 
-    // Update tracking
+    // Update tracking - store current block's end position
     shadowingState.lastBlockEndC = currentBlock.endC;
 }
 
