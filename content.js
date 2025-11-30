@@ -90,17 +90,11 @@ const CONFIG = {
 
 // Removed multi-type segmentation constants - now using single Meaning Blocks approach
 
-// Alternating color palette for distinguishing individual segments
-const SEGMENT_COLOR_PALETTE = [
-    { bg: 'rgba(255, 107, 107, 0.35)', border: 'rgba(255, 107, 107, 0.9)' },  // Coral Red
-    { bg: 'rgba(78, 205, 196, 0.35)', border: 'rgba(78, 205, 196, 0.9)' },    // Teal
-    { bg: 'rgba(255, 217, 61, 0.35)', border: 'rgba(255, 217, 61, 0.9)' },    // Yellow
-    { bg: 'rgba(149, 117, 205, 0.35)', border: 'rgba(149, 117, 205, 0.9)' },  // Purple
-    { bg: 'rgba(255, 159, 64, 0.35)', border: 'rgba(255, 159, 64, 0.9)' },    // Orange
-    { bg: 'rgba(102, 187, 106, 0.35)', border: 'rgba(102, 187, 106, 0.9)' },  // Green
-    { bg: 'rgba(66, 165, 245, 0.35)', border: 'rgba(66, 165, 245, 0.9)' },    // Blue
-    { bg: 'rgba(236, 64, 122, 0.35)', border: 'rgba(236, 64, 122, 0.9)' },    // Pink
-];
+// Single color for all meaning blocks - Light Blue
+const MEANING_BLOCK_COLOR = {
+    bg: 'rgba(66, 165, 245, 0.3)',
+    border: 'rgba(66, 165, 245, 0.9)'
+};
 
 // --- State ---
 let isProcessing = false;
@@ -538,11 +532,9 @@ function showIndividualTranslation(overlayData) {
     // Show this overlay
     overlayData.overlayElement.classList.add('elt-individual-visible');
 
-    // Show and highlight the underline
-    if (overlayData.debugElement) {
-        overlayData.debugElement.classList.add('elt-individual-visible');
-        const highlights = overlayData.debugElement.querySelectorAll('.clause-debug-highlight');
-        highlights.forEach(h => h.classList.add('elt-hovered'));
+    // Add hover class to wrapper for background/underline visibility
+    if (overlayData.wrapper) {
+        overlayData.wrapper.classList.add('elt-hovered');
     }
 }
 
@@ -557,17 +549,16 @@ function hideIndividualTranslation(overlayData) {
     // Hide this overlay
     overlayData.overlayElement.classList.remove('elt-individual-visible');
 
-    // Hide and un-highlight the underline
-    if (overlayData.debugElement) {
-        overlayData.debugElement.classList.remove('elt-individual-visible');
-        const highlights = overlayData.debugElement.querySelectorAll('.clause-debug-highlight');
-        highlights.forEach(h => h.classList.remove('elt-hovered'));
+    // Remove hover class from wrapper
+    if (overlayData.wrapper) {
+        overlayData.wrapper.classList.remove('elt-hovered');
     }
 }
 
 /**
  * Wraps meaning block spans in an inline container element.
  * This ensures whitespace between words is part of the hover area.
+ * Applies consistent background color for visual highlighting.
  * @param {HTMLSpanElement[]} spans - The spans that make up this meaning block
  * @returns {HTMLSpanElement|null} The wrapper element, or null if wrapping failed
  */
@@ -576,6 +567,13 @@ function wrapMeaningBlockSpans(spans) {
 
     const wrapper = document.createElement('span');
     wrapper.className = 'elt-meaning-block';
+
+    // Apply consistent background color via CSS custom properties
+    wrapper.setAttribute('data-bg-color', 'true');
+    wrapper.style.setProperty('--block-bg', MEANING_BLOCK_COLOR.bg);
+    wrapper.style.setProperty('--block-border', MEANING_BLOCK_COLOR.border);
+    // Darker border for dark mode hover
+    wrapper.style.setProperty('--block-border-dark', MEANING_BLOCK_COLOR.border.replace('0.9', '1'));
 
     try {
         // Use Range to capture spans AND whitespace between them
@@ -638,7 +636,6 @@ function renderSegmentations(p, alignedSegments) {
             debugElement: debugEl,
             wrapper: wrapper,  // Store wrapper for cleanup and hover
             type: segment.type,
-            colorIndex: index % SEGMENT_COLOR_PALETTE.length,
             translation: segment.translation,
             spans: spans || []
         };
