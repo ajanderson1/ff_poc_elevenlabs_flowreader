@@ -88,6 +88,9 @@ const CONFIG = {
     limitSingleParagraph: false // When true, only process the first paragraph (saves API calls during testing)
 };
 
+// Selector for all translatable text elements (paragraphs and headers)
+const TRANSLATABLE_SELECTOR = 'p, h1, h2, h3, h4, h5, h6';
+
 // Removed multi-type segmentation constants - now using single Meaning Blocks approach
 
 // Single color for all meaning blocks - Light Blue
@@ -908,8 +911,8 @@ function getBlocks(response) {
 async function reRenderAll() {
     Logger.log("reRenderAll called");
 
-    const paragraphs = document.querySelectorAll('#preview-content p');
-    Logger.log("Found paragraphs:", paragraphs.length);
+    const paragraphs = document.querySelectorAll(`#preview-content ${TRANSLATABLE_SELECTOR}`);
+    Logger.log("Found translatable elements:", paragraphs.length);
 
     paragraphs.forEach((p, idx) => {
         Logger.log(`Paragraph ${idx}: _fullResponse=${!!p._fullResponse}, _wordMap=${!!p._wordMap}`);
@@ -1020,7 +1023,7 @@ async function processParagraphs() {
     const contentDiv = document.getElementById('preview-content');
     if (!contentDiv) return;
 
-    const paragraphs = Array.from(contentDiv.querySelectorAll('p'));
+    const paragraphs = Array.from(contentDiv.querySelectorAll(TRANSLATABLE_SELECTOR));
     let unprocessed = paragraphs
         .filter(p => !p._fullResponse && p.textContent.trim().length > 0);
 
@@ -1106,10 +1109,10 @@ function enableToggleButtonIfReady() {
 }
 
 function applyDoubleSpacing(contentDiv) {
-    // Apply double-spacing to all paragraphs immediately
-    const paragraphs = contentDiv.querySelectorAll('p');
-    paragraphs.forEach(p => {
-        p.style.lineHeight = '5';
+    // Apply double-spacing to all translatable elements (paragraphs and headers)
+    const elements = contentDiv.querySelectorAll(TRANSLATABLE_SELECTOR);
+    elements.forEach(el => {
+        el.style.lineHeight = '5';
     });
 }
 
@@ -1458,7 +1461,7 @@ function navigateMeaningBlocks(direction, state) {
  */
 function getSentenceBoundaries() {
     const boundaries = [];
-    const paragraphs = document.querySelectorAll('#preview-content p');
+    const paragraphs = document.querySelectorAll(`#preview-content ${TRANSLATABLE_SELECTOR}`);
 
     paragraphs.forEach((p, pIdx) => {
         const wordMap = extractWordMap(p, pIdx);
