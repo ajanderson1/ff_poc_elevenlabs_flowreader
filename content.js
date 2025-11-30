@@ -538,11 +538,9 @@ function showIndividualTranslation(overlayData) {
     // Show this overlay
     overlayData.overlayElement.classList.add('elt-individual-visible');
 
-    // Show and highlight the underline
-    if (overlayData.debugElement) {
-        overlayData.debugElement.classList.add('elt-individual-visible');
-        const highlights = overlayData.debugElement.querySelectorAll('.clause-debug-highlight');
-        highlights.forEach(h => h.classList.add('elt-hovered'));
+    // Add hover class to wrapper for background/underline visibility
+    if (overlayData.wrapper) {
+        overlayData.wrapper.classList.add('elt-hovered');
     }
 }
 
@@ -557,25 +555,33 @@ function hideIndividualTranslation(overlayData) {
     // Hide this overlay
     overlayData.overlayElement.classList.remove('elt-individual-visible');
 
-    // Hide and un-highlight the underline
-    if (overlayData.debugElement) {
-        overlayData.debugElement.classList.remove('elt-individual-visible');
-        const highlights = overlayData.debugElement.querySelectorAll('.clause-debug-highlight');
-        highlights.forEach(h => h.classList.remove('elt-hovered'));
+    // Remove hover class from wrapper
+    if (overlayData.wrapper) {
+        overlayData.wrapper.classList.remove('elt-hovered');
     }
 }
 
 /**
  * Wraps meaning block spans in an inline container element.
  * This ensures whitespace between words is part of the hover area.
+ * Applies background color from the color palette for visual highlighting.
  * @param {HTMLSpanElement[]} spans - The spans that make up this meaning block
+ * @param {number} colorIndex - Index into SEGMENT_COLOR_PALETTE for alternating colors
  * @returns {HTMLSpanElement|null} The wrapper element, or null if wrapping failed
  */
-function wrapMeaningBlockSpans(spans) {
+function wrapMeaningBlockSpans(spans, colorIndex = 0) {
     if (!spans || spans.length === 0) return null;
 
     const wrapper = document.createElement('span');
     wrapper.className = 'elt-meaning-block';
+
+    // Apply background color from palette via CSS custom properties
+    const colorPair = SEGMENT_COLOR_PALETTE[colorIndex % SEGMENT_COLOR_PALETTE.length];
+    wrapper.setAttribute('data-bg-color', colorIndex.toString());
+    wrapper.style.setProperty('--block-bg', colorPair.bg);
+    wrapper.style.setProperty('--block-border', colorPair.border);
+    // Darker border for dark mode hover
+    wrapper.style.setProperty('--block-border-dark', colorPair.border.replace('0.9', '1'));
 
     try {
         // Use Range to capture spans AND whitespace between them
@@ -605,7 +611,8 @@ function renderSegmentations(p, alignedSegments) {
         Logger.log(`Creating overlay ${index}:`, segment.type, segment.translation?.substring(0, 30));
 
         // 1. Wrap meaning block spans in inline container (includes whitespace)
-        const wrapper = wrapMeaningBlockSpans(spans);
+        // Pass color index for alternating background colors
+        const wrapper = wrapMeaningBlockSpans(spans, index);
         if (wrapper) {
             p._translationOverlays.push(wrapper);
         }

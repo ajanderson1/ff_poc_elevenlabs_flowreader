@@ -128,19 +128,14 @@
     border-bottom: 1.5px dotted rgba(158, 158, 158, 0.6);
 }
 
-/* Hide highlighting by default, show when toggle is on */
+/* Hide old debug highlighting by default - now using .elt-meaning-block backgrounds instead */
 .clause-debug-container {
     display: none;
 }
 
-body.elt-show-highlighting .clause-debug-container {
-    display: block;
-}
-
-/* Also show underlines when translations are visible */
-body.elt-translations-visible .clause-debug-container {
-    display: block;
-}
+/* Note: The old debug underlines are no longer shown by default.
+   Background highlighting is handled via .elt-meaning-block wrappers with CSS custom properties.
+   The debug container is still created for potential future use but hidden. */
 
 /* Processing Banner */
 #elevenlabs-processing-banner {
@@ -266,32 +261,6 @@ html[data-theme="light"] .translation-line {
     display: block !important;
 }
 
-/* Show individual underline container when hovered */
-.clause-debug-container.elt-individual-visible {
-    display: block !important;
-}
-
-/* Darker underline when meaning block is hovered */
-.clause-debug-highlight.elt-hovered {
-    border-bottom-color: #333 !important;
-    border-bottom-width: 3px !important;
-}
-
-/* Dark mode support for hover underline */
-@media (prefers-color-scheme: dark) {
-    .clause-debug-highlight.elt-hovered {
-        border-bottom-color: #fff !important;
-    }
-}
-
-body.dark .clause-debug-highlight.elt-hovered,
-body.dark-mode .clause-debug-highlight.elt-hovered,
-body[data-theme="dark"] .clause-debug-highlight.elt-hovered,
-html.dark .clause-debug-highlight.elt-hovered,
-html[data-theme="dark"] .clause-debug-highlight.elt-hovered {
-    border-bottom-color: #fff !important;
-}
-
 /* Cursor pointer on hoverable meaning blocks */
 #preview-content span[c] {
     cursor: pointer;
@@ -301,4 +270,53 @@ html[data-theme="dark"] .clause-debug-highlight.elt-hovered {
 .elt-meaning-block {
     display: inline;
     cursor: pointer;
+    border-radius: 3px;
+    padding: 1px 0;
+    /* Background color set via inline style from JS with color index */
+    /* Transition for smooth hover effects */
+    transition: border-bottom 0.15s ease;
+}
+
+/* Show backgrounds when "Show Meaning Blocks" toggle is enabled */
+body.elt-show-highlighting .elt-meaning-block[data-bg-color] {
+    background-color: var(--block-bg);
+}
+
+/* Also show backgrounds when translations are visible (button held) */
+body.elt-translations-visible .elt-meaning-block[data-bg-color] {
+    background-color: var(--block-bg);
+}
+
+/* Hover state: show darker underline for visual feedback */
+body.elt-show-highlighting .elt-meaning-block:hover,
+body.elt-translations-visible .elt-meaning-block:hover,
+.elt-meaning-block.elt-hovered {
+    border-bottom: 2.5px solid var(--block-border, currentColor);
+}
+
+/* Also show background when hovered (for individual translations) */
+.elt-meaning-block.elt-hovered[data-bg-color] {
+    background-color: var(--block-bg);
+}
+
+/* Dark mode hover underline */
+@media (prefers-color-scheme: dark) {
+    body.elt-show-highlighting .elt-meaning-block:hover,
+    body.elt-translations-visible .elt-meaning-block:hover,
+    .elt-meaning-block.elt-hovered {
+        border-bottom-color: var(--block-border-dark, rgba(255, 255, 255, 0.8));
+    }
+}
+
+body.dark .elt-meaning-block:hover,
+body.dark-mode .elt-meaning-block:hover,
+body[data-theme="dark"] .elt-meaning-block:hover,
+html.dark .elt-meaning-block:hover,
+html[data-theme="dark"] .elt-meaning-block:hover,
+body.dark .elt-meaning-block.elt-hovered,
+body.dark-mode .elt-meaning-block.elt-hovered,
+body[data-theme="dark"] .elt-meaning-block.elt-hovered,
+html.dark .elt-meaning-block.elt-hovered,
+html[data-theme="dark"] .elt-meaning-block.elt-hovered {
+    border-bottom-color: var(--block-border-dark, rgba(255, 255, 255, 0.8));
 }
