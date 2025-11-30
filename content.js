@@ -978,8 +978,8 @@ function injectToggleButton() {
 
     const btn = document.createElement('button');
     btn.id = 'elevenlabs-translator-toggle';
-    btn.innerHTML = '文';
-    btn.title = "Hold to Reveal Translations";
+    btn.innerHTML = '\u6587';
+    btn.title = "Press and hold \"/\" key";
 
     const show = () => setTranslationsVisibility(true);
     const hide = () => setTranslationsVisibility(false);

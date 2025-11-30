@@ -80,6 +80,27 @@
     transform: scale(1.05);
 }
 
+/* Custom tooltip for toggle button */
+#elevenlabs-translator-toggle::after {
+    content: attr(title);
+    position: absolute;
+    top: -20%;
+    right: 80%;
+    padding: 0px 6px;
+    background-color: rgba(51, 51, 51, 0.8);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 7px;
+    border-radius: 1px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+#elevenlabs-translator-toggle:hover::after {
+    opacity: 1;
+}
+
 #elevenlabs-translator-toggle:active {
     transform: scale(0.95);
 }
