@@ -9,8 +9,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const clearCacheBtn = document.getElementById('clear-cache');
   const cacheStatusMsg = document.getElementById('cache-status-msg');
 
+  // Shadowing controls
+  const shadowingToggle = document.getElementById('shadowing-enabled');
+  const shadowingRepetitions = document.getElementById('shadowing-repetitions');
+  const shadowingPauseSpeed = document.getElementById('shadowing-pause-speed');
+  const shadowingBlockType = document.getElementById('shadowing-block-type');
+  const pauseSpeedValue = document.getElementById('pause-speed-value');
+
   // Load saved settings
-  chrome.storage.sync.get(['enabled', 'openaiApiKey', 'individualTranslations', 'partitioningEnabled', 'limitSingleParagraph'], (result) => {
+  chrome.storage.sync.get([
+    'enabled',
+    'openaiApiKey',
+    'individualTranslations',
+    'partitioningEnabled',
+    'limitSingleParagraph',
+    'shadowingEnabled',
+    'shadowingRepetitions',
+    'shadowingPauseSpeed',
+    'shadowingBlockType'
+  ], (result) => {
     toggle.checked = result.enabled !== false; // Default true
     individualTranslationsToggle.checked = result.individualTranslations !== false; // Default true
     partitioningToggle.checked = result.partitioningEnabled === true; // Default false (debug feature)
@@ -18,6 +35,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (result.openaiApiKey) {
       apiKeyInput.value = result.openaiApiKey;
     }
+
+    // Shadowing settings
+    shadowingToggle.checked = result.shadowingEnabled === true; // Default false
+    shadowingRepetitions.value = result.shadowingRepetitions || 1;
+    shadowingPauseSpeed.value = result.shadowingPauseSpeed || 1;
+    pauseSpeedValue.textContent = (result.shadowingPauseSpeed || 1).toFixed(1) + 'x';
+    shadowingBlockType.checked = result.shadowingBlockType === 'sentence'; // Default: meaning blocks (unchecked)
   });
 
   // Save enabled state
@@ -38,6 +62,30 @@ document.addEventListener('DOMContentLoaded', () => {
   // Save limit single paragraph state
   limitSingleParagraphToggle.addEventListener('change', () => {
     chrome.storage.sync.set({ limitSingleParagraph: limitSingleParagraphToggle.checked });
+  });
+
+  // Shadowing settings handlers
+  shadowingToggle.addEventListener('change', () => {
+    chrome.storage.sync.set({ shadowingEnabled: shadowingToggle.checked });
+  });
+
+  shadowingRepetitions.addEventListener('change', () => {
+    let value = parseInt(shadowingRepetitions.value, 10);
+    if (isNaN(value) || value < 1) value = 1;
+    if (value > 10) value = 10;
+    shadowingRepetitions.value = value;
+    chrome.storage.sync.set({ shadowingRepetitions: value });
+  });
+
+  shadowingPauseSpeed.addEventListener('input', () => {
+    const value = parseFloat(shadowingPauseSpeed.value);
+    pauseSpeedValue.textContent = value.toFixed(1) + 'x';
+    chrome.storage.sync.set({ shadowingPauseSpeed: value });
+  });
+
+  shadowingBlockType.addEventListener('change', () => {
+    const blockType = shadowingBlockType.checked ? 'sentence' : 'meaning';
+    chrome.storage.sync.set({ shadowingBlockType: blockType });
   });
 
   // Save API Key

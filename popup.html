@@ -167,6 +167,62 @@
       font-size: 0.85em;
       min-height: 1.2em;
     }
+
+    /* Shadowing settings */
+    .shadowing-section {
+      margin-top: 15px;
+      border-top: 1px solid #eee;
+      padding-top: 10px;
+    }
+
+    .slider-group {
+      margin-bottom: 12px;
+    }
+
+    .slider-group label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .slider-group input[type="range"] {
+      width: 100%;
+      margin-bottom: 2px;
+    }
+
+    .slider-value {
+      font-size: 11px;
+      color: #666;
+      text-align: center;
+    }
+
+    .number-group {
+      margin-bottom: 12px;
+    }
+
+    .number-group label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .number-group input[type="number"] {
+      width: 60px;
+      padding: 4px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    .block-type-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .block-type-toggle span {
+      flex-shrink: 0;
+    }
   </style>
 </head>
 
@@ -219,6 +275,38 @@
 
     <button id="clear-cache" class="clear-cache-btn">Clear Translation Cache</button>
     <p id="cache-status-msg"></p>
+
+    <div class="shadowing-section">
+      <div class="section-header">Shadowing</div>
+
+      <div class="control-group">
+        <label class="switch">
+          <input type="checkbox" id="shadowing-enabled">
+          <span class="slider round"></span>
+        </label>
+        <span>Enable Shadowing</span>
+      </div>
+
+      <div class="number-group">
+        <label for="shadowing-repetitions">Repetitions (1-10):</label>
+        <input type="number" id="shadowing-repetitions" min="1" max="10" value="1">
+      </div>
+
+      <div class="slider-group">
+        <label for="shadowing-pause-speed">Pause Duration:</label>
+        <input type="range" id="shadowing-pause-speed" min="0.5" max="5" step="0.1" value="1">
+        <div class="slider-value" id="pause-speed-value">1.0x</div>
+      </div>
+
+      <div class="control-group block-type-toggle">
+        <span>Meaning Blocks</span>
+        <label class="switch">
+          <input type="checkbox" id="shadowing-block-type">
+          <span class="slider round"></span>
+        </label>
+        <span>Sentences</span>
+      </div>
+    </div>
 
     <div class="footer">
       <p>Press and hold "&#25991;" button or hold "/" key, on the reader page to see translations.</p>
