@@ -1133,12 +1133,16 @@ if (document.readyState === 'loading') {
 
 // --- Keyboard Navigation ---
 
-// Double-press detection state
-let lastLeftArrowTime = 0;
-let lastRightArrowTime = 0;
-let lastShiftLeftArrowTime = 0;
-let lastShiftRightArrowTime = 0;
 const DOUBLE_PRESS_THRESHOLD = 300; // ms
+
+// Navigation state for accumulated rapid presses
+// Tracks: last press time, accumulated press count, base block index at first press
+let navState = {
+    left: { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null },
+    right: { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null },
+    shiftLeft: { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null },
+    shiftRight: { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null }
+};
 
 /**
  * Get all meaning block boundaries sorted by position
@@ -1229,39 +1233,120 @@ function findBlockIndex(boundaries, position) {
 }
 
 /**
+ * Get the currently highlighted (active) span from ElevenLabs
+ * @returns {HTMLSpanElement|null} The span with active highlighting
+ */
+function getActiveHighlightSpan() {
+    // ElevenLabs uses 'active' class for the currently playing word
+    return document.querySelector('#preview-content span.active[c]');
+}
+
+/**
+ * Manually update the highlight to match the target span
+ * This is a fallback when synthetic events don't update React's state
+ * @param {HTMLSpanElement} targetSpan - The span that should be highlighted
+ */
+function forceHighlightUpdate(targetSpan) {
+    if (!targetSpan) return;
+
+    // Remove 'active' class from any currently highlighted span
+    const currentActive = getActiveHighlightSpan();
+    if (currentActive) {
+        currentActive.classList.remove('active');
+    }
+
+    // Add 'active' class to the target span
+    targetSpan.classList.add('active');
+    Logger.log("Navigation: manually updated highlight to c=" + targetSpan.getAttribute('c'));
+}
+
+/**
  * Seek audio to a specific span by simulating user interaction
  * Uses full event sequence to ensure ElevenLabs updates highlighting
+ * Includes verification and fallback to ensure highlighting stays in sync
+ * @param {HTMLSpanElement} span - The span to seek to
  */
 function seekToSpan(span) {
     if (!span) return;
 
-    const c = span.getAttribute('c');
-    Logger.log("Navigation: seeking to c=" + c);
+    const targetC = span.getAttribute('c');
+    Logger.log("Navigation: seeking to c=" + targetC);
+
+    // Get coordinates for realistic event positioning
+    const rect = span.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
 
     // Try dispatching a full pointer/mouse event sequence
     // ElevenLabs may listen for these rather than just 'click'
     const eventOptions = {
         bubbles: true,
         cancelable: true,
-        view: window
+        view: window,
+        clientX,
+        clientY,
+        screenX: clientX,
+        screenY: clientY
     };
 
     // Dispatch pointer events (modern approach)
-    span.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1 }));
-    span.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1 }));
+    span.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
+    span.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
 
     // Also dispatch mouse events for compatibility
-    span.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-    span.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-    span.dispatchEvent(new MouseEvent('click', eventOptions));
+    span.dispatchEvent(new MouseEvent('mousedown', { ...eventOptions, button: 0 }));
+    span.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, button: 0 }));
+    span.dispatchEvent(new MouseEvent('click', { ...eventOptions, button: 0 }));
+
+    // Verify and fix highlighting after a brief delay
+    // ElevenLabs may take a moment to update React state
+    setTimeout(() => {
+        verifyAndFixHighlight(span, targetC);
+    }, 50);
 }
 
 /**
- * Navigate between meaning blocks
- * @param {'left'|'right'} direction
- * @param {boolean} isDouble - true if double-press detected
+ * Verify that highlighting updated correctly, fix if needed
+ * @param {HTMLSpanElement} targetSpan - The span we seeked to
+ * @param {string} targetC - The expected c value
  */
-function navigateMeaningBlocks(direction, isDouble) {
+function verifyAndFixHighlight(targetSpan, targetC) {
+    const activeSpan = getActiveHighlightSpan();
+    const activeC = activeSpan ? activeSpan.getAttribute('c') : null;
+
+    if (activeC === targetC) {
+        Logger.debug("Navigation: highlight verified at c=" + targetC);
+        return; // Highlight is correct, nothing to do
+    }
+
+    // Highlight didn't update - try a second event dispatch with focus
+    Logger.debug("Navigation: highlight mismatch (expected c=" + targetC + ", got c=" + activeC + "), retrying...");
+
+    // Focus the span first, then click
+    targetSpan.focus();
+    targetSpan.click();
+
+    // Final verification after another short delay
+    setTimeout(() => {
+        const finalActiveSpan = getActiveHighlightSpan();
+        const finalActiveC = finalActiveSpan ? finalActiveSpan.getAttribute('c') : null;
+
+        if (finalActiveC !== targetC) {
+            // Events still didn't work - force the highlight update manually
+            Logger.debug("Navigation: synthetic events failed, forcing highlight update");
+            forceHighlightUpdate(targetSpan);
+        } else {
+            Logger.debug("Navigation: highlight corrected to c=" + targetC);
+        }
+    }, 50);
+}
+
+/**
+ * Navigate between meaning blocks with accumulated rapid-press support
+ * @param {'left'|'right'} direction
+ * @param {Object} state - navigation state object for this key
+ */
+function navigateMeaningBlocks(direction, state) {
     const boundaries = getBlockBoundaries();
 
     if (boundaries.length === 0) {
@@ -1269,35 +1354,56 @@ function navigateMeaningBlocks(direction, isDouble) {
         return;
     }
 
-    const currentPos = getCurrentPlaybackPosition();
-    const currentIndex = findBlockIndex(boundaries, currentPos);
+    const now = Date.now();
+    const isRapidPress = (now - state.lastTime) < DOUBLE_PRESS_THRESHOLD;
 
-    Logger.debug("Navigation:", { direction, isDouble, currentPos, currentIndex, totalBlocks: boundaries.length });
+    // Cancel any pending seek - we're updating the target
+    if (state.seekTimer) {
+        clearTimeout(state.seekTimer);
+        state.seekTimer = null;
+    }
 
-    let targetIndex;
-
-    if (direction === 'left') {
-        if (isDouble) {
-            // Double left: go to previous block
-            targetIndex = Math.max(0, currentIndex - 1);
-        } else {
-            // Single left: go to start of current block
-            targetIndex = currentIndex;
-        }
+    if (isRapidPress && state.count > 0) {
+        // Rapid press: increment count, keep same base index
+        state.count++;
     } else {
-        // direction === 'right'
-        if (isDouble) {
-            // Double right: skip ahead two blocks
-            targetIndex = Math.min(boundaries.length - 1, currentIndex + 2);
-        } else {
-            // Single right: go to next block
-            targetIndex = Math.min(boundaries.length - 1, currentIndex + 1);
-        }
+        // New navigation sequence: capture current position as base
+        const currentPos = getCurrentPlaybackPosition();
+        state.baseIndex = findBlockIndex(boundaries, currentPos);
+        state.count = 1;
+    }
+    state.lastTime = now;
+
+    // Calculate target based on accumulated presses from the base position
+    let targetIndex;
+    if (direction === 'left') {
+        // Left: 1st press = start of current (base), 2nd = 1 back, 3rd = 2 back, etc.
+        targetIndex = Math.max(0, state.baseIndex - (state.count - 1));
+    } else {
+        // Right: 1st press = next block, 2nd = 2 forward, 3rd = 3 forward, etc.
+        targetIndex = Math.min(boundaries.length - 1, state.baseIndex + state.count);
     }
 
-    if (targetIndex >= 0 && targetIndex < boundaries.length) {
-        seekToSpan(boundaries[targetIndex].firstSpan);
-    }
+    Logger.debug("Navigation:", {
+        direction,
+        pressCount: state.count,
+        baseIndex: state.baseIndex,
+        targetIndex,
+        totalBlocks: boundaries.length
+    });
+
+    // Debounce the actual seek to prevent audio snippets during rapid pressing
+    // Only execute the seek after the threshold expires without another press
+    state.seekTimer = setTimeout(() => {
+        // For right navigation: only seek if we're actually moving forward
+        // (prevents seeking to start of current block when at the end)
+        const shouldSeek = direction === 'left' || targetIndex > state.baseIndex;
+
+        if (shouldSeek && targetIndex >= 0 && targetIndex < boundaries.length) {
+            seekToSpan(boundaries[targetIndex].firstSpan);
+        }
+        state.seekTimer = null;
+    }, DOUBLE_PRESS_THRESHOLD);
 }
 
 /**
@@ -1341,11 +1447,11 @@ function getSentenceBoundaries() {
 }
 
 /**
- * Navigate between sentences
+ * Navigate between sentences with accumulated rapid-press support
  * @param {'left'|'right'} direction
- * @param {boolean} isDouble - true if double-press detected
+ * @param {Object} state - navigation state object for this key
  */
-function navigateSentences(direction, isDouble) {
+function navigateSentences(direction, state) {
     const boundaries = getSentenceBoundaries();
 
     if (boundaries.length === 0) {
@@ -1353,35 +1459,54 @@ function navigateSentences(direction, isDouble) {
         return;
     }
 
-    const currentPos = getCurrentPlaybackPosition();
-    const currentIndex = findBlockIndex(boundaries, currentPos);
+    const now = Date.now();
+    const isRapidPress = (now - state.lastTime) < DOUBLE_PRESS_THRESHOLD;
 
-    Logger.debug("Sentence navigation:", { direction, isDouble, currentPos, currentIndex, totalSentences: boundaries.length });
+    // Cancel any pending seek - we're updating the target
+    if (state.seekTimer) {
+        clearTimeout(state.seekTimer);
+        state.seekTimer = null;
+    }
 
-    let targetIndex;
-
-    if (direction === 'left') {
-        if (isDouble) {
-            // Double left: go to previous sentence
-            targetIndex = Math.max(0, currentIndex - 1);
-        } else {
-            // Single left: go to start of current sentence
-            targetIndex = currentIndex;
-        }
+    if (isRapidPress && state.count > 0) {
+        // Rapid press: increment count, keep same base index
+        state.count++;
     } else {
-        // direction === 'right'
-        if (isDouble) {
-            // Double right: skip ahead two sentences
-            targetIndex = Math.min(boundaries.length - 1, currentIndex + 2);
-        } else {
-            // Single right: go to next sentence
-            targetIndex = Math.min(boundaries.length - 1, currentIndex + 1);
-        }
+        // New navigation sequence: capture current position as base
+        const currentPos = getCurrentPlaybackPosition();
+        state.baseIndex = findBlockIndex(boundaries, currentPos);
+        state.count = 1;
+    }
+    state.lastTime = now;
+
+    // Calculate target based on accumulated presses from the base position
+    let targetIndex;
+    if (direction === 'left') {
+        // Left: 1st press = start of current (base), 2nd = 1 back, 3rd = 2 back, etc.
+        targetIndex = Math.max(0, state.baseIndex - (state.count - 1));
+    } else {
+        // Right: 1st press = next sentence, 2nd = 2 forward, 3rd = 3 forward, etc.
+        targetIndex = Math.min(boundaries.length - 1, state.baseIndex + state.count);
     }
 
-    if (targetIndex >= 0 && targetIndex < boundaries.length) {
-        seekToSpan(boundaries[targetIndex].firstSpan);
-    }
+    Logger.debug("Sentence navigation:", {
+        direction,
+        pressCount: state.count,
+        baseIndex: state.baseIndex,
+        targetIndex,
+        totalSentences: boundaries.length
+    });
+
+    // Debounce the actual seek to prevent audio snippets during rapid pressing
+    state.seekTimer = setTimeout(() => {
+        // For right navigation: only seek if we're actually moving forward
+        const shouldSeek = direction === 'left' || targetIndex > state.baseIndex;
+
+        if (shouldSeek && targetIndex >= 0 && targetIndex < boundaries.length) {
+            seekToSpan(boundaries[targetIndex].firstSpan);
+        }
+        state.seekTimer = null;
+    }, DOUBLE_PRESS_THRESHOLD);
 }
 
 // Main keyboard event handler
@@ -1401,8 +1526,6 @@ document.addEventListener('keydown', (e) => {
         setTranslationsVisibility(true);
         return;
     }
-
-    const now = Date.now();
 
     // Spacebar: Play/Pause
     if (e.code === 'Space') {
@@ -1456,44 +1579,28 @@ document.addEventListener('keydown', (e) => {
     // Shift+Left Arrow: Navigate to current/previous sentence
     if (e.shiftKey && e.code === 'ArrowLeft') {
         e.preventDefault();
-
-        const isDouble = (now - lastShiftLeftArrowTime) < DOUBLE_PRESS_THRESHOLD;
-        lastShiftLeftArrowTime = now;
-
-        navigateSentences('left', isDouble);
+        navigateSentences('left', navState.shiftLeft);
         return;
     }
 
     // Shift+Right Arrow: Navigate to next sentence
     if (e.shiftKey && e.code === 'ArrowRight') {
         e.preventDefault();
-
-        const isDouble = (now - lastShiftRightArrowTime) < DOUBLE_PRESS_THRESHOLD;
-        lastShiftRightArrowTime = now;
-
-        navigateSentences('right', isDouble);
+        navigateSentences('right', navState.shiftRight);
         return;
     }
 
     // Left Arrow: Navigate to current/previous block
     if (e.code === 'ArrowLeft') {
         e.preventDefault();
-
-        const isDouble = (now - lastLeftArrowTime) < DOUBLE_PRESS_THRESHOLD;
-        lastLeftArrowTime = now;
-
-        navigateMeaningBlocks('left', isDouble);
+        navigateMeaningBlocks('left', navState.left);
         return;
     }
 
     // Right Arrow: Navigate to next block
     if (e.code === 'ArrowRight') {
         e.preventDefault();
-
-        const isDouble = (now - lastRightArrowTime) < DOUBLE_PRESS_THRESHOLD;
-        lastRightArrowTime = now;
-
-        navigateMeaningBlocks('right', isDouble);
+        navigateMeaningBlocks('right', navState.right);
         return;
     }
 });
