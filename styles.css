@@ -1,5 +1,11 @@
 /* Increase line height to make room for translations above each line */
 /* Remove ElevenLabs paragraph background highlighting */
+
+/* Make #preview-content a positioning context so overlays scroll with content */
+#preview-content {
+    position: relative;
+}
+
 #preview-content p {
     line-height: 5 !important;
     position: relative;
@@ -47,7 +53,7 @@
 #elevenlabs-translator-toggle {
     position: fixed;
     bottom: 88px;
-    right: 50px;
+    right: 60px;
     z-index: 10000;
     width: 60px;
     height: 60px;

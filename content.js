@@ -539,16 +539,18 @@ function renderSegmentations(p, alignedSegments) {
         }
 
         // 3. Translation Overlay Container (multi-line support)
+        // Append to #preview-content so overlays scroll with content and go behind fixed nav bar
+        const contentDiv = document.getElementById('preview-content');
         const overlayContainer = document.createElement('div');
         overlayContainer.className = 'translation-overlay-container';
         if (translationsVisible) overlayContainer.classList.add('translation-visible');
-        document.body.appendChild(overlayContainer);
+        (contentDiv || document.body).appendChild(overlayContainer);
         p._translationOverlays.push(overlayContainer);
 
         // 4. Segment Highlight Container (always created for visual feedback)
         const debugEl = document.createElement('div');
         debugEl.className = 'clause-debug-container';
-        document.body.appendChild(debugEl);
+        (contentDiv || document.body).appendChild(debugEl);
         p._translationOverlays.push(debugEl);
 
         const overlayData = {
@@ -672,6 +674,10 @@ function splitTranslationByLines(translation, lineRects) {
 }
 
 function updateOverlayPositions() {
+    // Get container rect for relative positioning (overlays are now inside #preview-content)
+    const contentDiv = document.getElementById('preview-content');
+    const containerRect = contentDiv ? contentDiv.getBoundingClientRect() : null;
+
     activeOverlays.forEach((item, idx) => {
         const rects = item.range.getClientRects();
         if (!rects.length) return;
@@ -696,10 +702,18 @@ function updateOverlayPositions() {
             lineOverlay.className = 'translation-line';
             lineOverlay.textContent = translationLines[lineIdx] || '';
 
-            // Position: centered above the original line
+            // Position: centered above the original line, relative to #preview-content
             const estimatedHeight = 20;
-            const top = line.top + window.scrollY - estimatedHeight - 8;
-            const centerX = line.left + window.scrollX + (line.width / 2);
+            let top, centerX;
+            if (containerRect) {
+                // Relative to #preview-content container
+                top = line.top - containerRect.top - estimatedHeight - 8;
+                centerX = line.left - containerRect.left + (line.width / 2);
+            } else {
+                // Fallback to document-relative positioning
+                top = line.top + window.scrollY - estimatedHeight - 8;
+                centerX = line.left + window.scrollX + (line.width / 2);
+            }
 
             lineOverlay.style.top = `${top}px`;
             lineOverlay.style.left = `${centerX}px`;
@@ -715,8 +729,16 @@ function updateOverlayPositions() {
                 const box = document.createElement('div');
                 box.className = 'clause-debug-highlight';
                 box.setAttribute('data-type', item.type || CONFIG.currentSegmentationType);
-                box.style.top = `${line.top + window.scrollY}px`;
-                box.style.left = `${line.left + window.scrollX}px`;
+                let boxTop, boxLeft;
+                if (containerRect) {
+                    boxTop = line.top - containerRect.top;
+                    boxLeft = line.left - containerRect.left;
+                } else {
+                    boxTop = line.top + window.scrollY;
+                    boxLeft = line.left + window.scrollX;
+                }
+                box.style.top = `${boxTop}px`;
+                box.style.left = `${boxLeft}px`;
                 box.style.width = `${line.width}px`;
                 box.style.height = `${line.height}px`;
                 item.debugElement.appendChild(box);
