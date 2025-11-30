@@ -153,6 +153,56 @@ function logTotalCostSummary() {
     );
 }
 
+// --- Cache Helper Functions ---
+
+/**
+ * Gets cached translations for the current page URL.
+ * @returns {Promise<object|null>} Cached data or null if not found
+ */
+async function getCachedTranslations() {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+            action: 'GET_CACHED_TRANSLATIONS',
+            url: window.location.href
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+            }
+            if (response && response.success) {
+                resolve(response.data);
+            } else {
+                reject(new Error(response?.error || 'Failed to get cached translations'));
+            }
+        });
+    });
+}
+
+/**
+ * Stores translations in the cache for the current page URL.
+ * @param {Array<object>} paragraphs - Array of paragraph translation data
+ * @returns {Promise<void>}
+ */
+async function setCachedTranslations(paragraphs) {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+            action: 'SET_CACHED_TRANSLATIONS',
+            url: window.location.href,
+            paragraphs: paragraphs
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+            }
+            if (response && response.success) {
+                resolve();
+            } else {
+                reject(new Error(response?.error || 'Failed to cache translations'));
+            }
+        });
+    });
+}
+
 // --- Configuration ---
 const CONFIG = {
     enabled: true,
@@ -177,6 +227,7 @@ const MEANING_BLOCK_COLOR = {
 let isProcessing = false;
 let hasProcessedInitially = false; // Ensures LLM call only happens once per page load
 let activeOverlays = []; // Stores { range, overlayElement, debugElement, type }
+let isUsingCachedTranslations = false; // Track if we're loading from cache
 
 // --- Cost Tracking State ---
 // Running totals for cost summary (reset per page load)
@@ -853,14 +904,31 @@ function injectProcessingBanner() {
     banner.id = 'elevenlabs-processing-banner';
     banner.innerHTML = `
         <div class="elevenlabs-spinner"></div>
-        <span>Processing...</span>
+        <span class="elevenlabs-banner-text">Processing...</span>
     `;
     document.body.appendChild(banner);
 }
 
-function showProcessingBanner() {
+/**
+ * Updates the processing banner text.
+ * @param {string} text - The text to display in the banner
+ */
+function updateProcessingBannerText(text) {
     const banner = document.getElementById('elevenlabs-processing-banner');
-    if (banner) banner.classList.add('visible');
+    if (banner) {
+        const textSpan = banner.querySelector('.elevenlabs-banner-text');
+        if (textSpan) {
+            textSpan.textContent = text;
+        }
+    }
+}
+
+function showProcessingBanner(isCached = false) {
+    const banner = document.getElementById('elevenlabs-processing-banner');
+    if (banner) {
+        banner.classList.add('visible');
+        updateProcessingBannerText(isCached ? 'Loading cached translations...' : 'Processing...');
+    }
 
     const btn = document.getElementById('elevenlabs-translator-toggle');
     if (btn) btn.disabled = true;
@@ -1007,65 +1075,137 @@ async function processParagraphs() {
 
     hasProcessedInitially = true; // Set immediately - only one LLM call attempt per page load
     isProcessing = true;
-    showProcessingBanner();
 
-    // Process paragraphs sequentially (one LLM call at a time)
-    for (let i = 0; i < unprocessed.length; i++) {
-        const p = unprocessed[i];
+    // Check cache first
+    let cachedData = null;
+    try {
+        cachedData = await getCachedTranslations();
+    } catch (err) {
+        Logger.debug("Cache check failed:", err.message);
+    }
 
-        // Try position-based mapping first (using c attributes)
-        const wordMap = extractWordMap(p, i);
+    if (cachedData && cachedData.paragraphs && cachedData.paragraphs.length > 0) {
+        // Use cached translations
+        isUsingCachedTranslations = true;
+        showProcessingBanner(true); // Show "Loading cached translations..."
+        Logger.log("Using cached translations from", new Date(cachedData.timestamp).toLocaleString());
 
-        if (wordMap.words.length > 0) {
-            // Use position-based flow
-            Logger.debug(`Processing paragraph ${i + 1}/${unprocessed.length} with position-based mapping (${wordMap.words.length} words)`);
+        for (let i = 0; i < unprocessed.length && i < cachedData.paragraphs.length; i++) {
+            const p = unprocessed[i];
+            const cached = cachedData.paragraphs[i];
 
-            try {
-                const responseData = await fetchMeaningBlocks(wordMap);
-                p._fullResponse = responseData;
-                p._wordMap = wordMap; // Store word map for re-rendering
+            if (!cached || !cached.responseData) continue;
 
-                const blocks = getBlocks(responseData);
+            // Rebuild word map for this paragraph
+            const wordMap = extractWordMap(p, i);
 
-                Logger.debug("Meaning blocks processing", {
-                    wordCount: wordMap.words.length,
-                    blockCount: blocks.length,
-                    firstBlock: blocks[0] ? `c:${blocks[0].start_c}-${blocks[0].end_c}: "${blocks[0].original}"` : 'none'
-                });
+            if (wordMap.words.length > 0) {
+                p._fullResponse = cached.responseData;
+                p._wordMap = wordMap;
 
+                const blocks = getBlocks(cached.responseData);
                 const mapped = mapSegmentsToSpans(wordMap, blocks);
-
-                Logger.debug("Mapping result:", mapped.length, "blocks mapped");
 
                 if (mapped.length > 0) {
                     renderSegmentations(p, mapped);
-                    // Enable toggle button as soon as first paragraph has translations
                     enableToggleButtonIfReady();
-                } else if (blocks.length > 0) {
-                    Logger.warn("No blocks mapped - check c values match between API response and DOM");
                 }
 
-                // Output standardized training data for prompt refinement
-                Logger.trainingOutput(wordMap, responseData);
-
-                // Log per-paragraph cost (always active, not tied to debug toggle)
-                const originalText = wordMap.words.map(w => w.text).join(' ');
-                const tokenUsage = responseData.tokenUsage || { promptTokens: 0, completionTokens: 0 };
-                logParagraphCost(i + 1, originalText, tokenUsage.promptTokens, tokenUsage.completionTokens);
-
-            } catch (err) {
-                Logger.error("Position-based translation failed:", err);
-                showErrorNotification(err.message);
-                // Note: Failed translations are NOT counted in cost totals
+                Logger.debug(`Loaded cached paragraph ${i + 1}: ${blocks.length} blocks`);
             }
-        } else {
-            // Only position-based partitioning is supported
-            Logger.warn(`Paragraph ${i}: skipping - no word map available for meaning blocks`);
         }
-    }
 
-    // Log total cost summary after all paragraphs are processed
-    logTotalCostSummary();
+        Logger.log("Loaded", Math.min(unprocessed.length, cachedData.paragraphs.length), "paragraphs from cache");
+    } else {
+        // Fetch fresh translations
+        isUsingCachedTranslations = false;
+        showProcessingBanner(false); // Show "Processing..."
+
+        const paragraphsToCache = [];
+
+        // Process paragraphs sequentially (one LLM call at a time)
+        for (let i = 0; i < unprocessed.length; i++) {
+            const p = unprocessed[i];
+
+            // Try position-based mapping first (using c attributes)
+            const wordMap = extractWordMap(p, i);
+
+            if (wordMap.words.length > 0) {
+                // Use position-based flow
+                Logger.debug(`Processing paragraph ${i + 1}/${unprocessed.length} with position-based mapping (${wordMap.words.length} words)`);
+
+                try {
+                    const responseData = await fetchMeaningBlocks(wordMap);
+                    p._fullResponse = responseData;
+                    p._wordMap = wordMap; // Store word map for re-rendering
+
+                    // Store for caching
+                    paragraphsToCache.push({
+                        index: i,
+                        responseData: responseData
+                    });
+
+                    const blocks = getBlocks(responseData);
+
+                    Logger.debug("Meaning blocks processing", {
+                        wordCount: wordMap.words.length,
+                        blockCount: blocks.length,
+                        firstBlock: blocks[0] ? `c:${blocks[0].start_c}-${blocks[0].end_c}: "${blocks[0].original}"` : 'none'
+                    });
+
+                    const mapped = mapSegmentsToSpans(wordMap, blocks);
+
+                    Logger.debug("Mapping result:", mapped.length, "blocks mapped");
+
+                    if (mapped.length > 0) {
+                        renderSegmentations(p, mapped);
+                        // Enable toggle button as soon as first paragraph has translations
+                        enableToggleButtonIfReady();
+                    } else if (blocks.length > 0) {
+                        Logger.warn("No blocks mapped - check c values match between API response and DOM");
+                    }
+
+                    // Output standardized training data for prompt refinement
+                    Logger.trainingOutput(wordMap, responseData);
+
+                    // Log per-paragraph cost (always active, not tied to debug toggle)
+                    const originalText = wordMap.words.map(w => w.text).join(' ');
+                    const tokenUsage = responseData.tokenUsage || { promptTokens: 0, completionTokens: 0 };
+                    logParagraphCost(i + 1, originalText, tokenUsage.promptTokens, tokenUsage.completionTokens);
+
+                } catch (err) {
+                    Logger.error("Position-based translation failed:", err);
+                    showErrorNotification(err.message);
+                    // Note: Failed translations are NOT counted in cost totals
+                    // Store null for failed paragraphs to maintain index alignment
+                    paragraphsToCache.push({
+                        index: i,
+                        responseData: null
+                    });
+                }
+            } else {
+                // Only position-based partitioning is supported
+                Logger.warn(`Paragraph ${i}: skipping - no word map available for meaning blocks`);
+                paragraphsToCache.push({
+                    index: i,
+                    responseData: null
+                });
+            }
+        }
+
+        // Cache the translations
+        if (paragraphsToCache.some(p => p.responseData !== null)) {
+            try {
+                await setCachedTranslations(paragraphsToCache);
+                Logger.log("Cached", paragraphsToCache.filter(p => p.responseData !== null).length, "paragraph translations");
+            } catch (err) {
+                Logger.warn("Failed to cache translations:", err.message);
+            }
+        }
+
+        // Log total cost summary after all paragraphs are processed
+        logTotalCostSummary();
+    }
 
     isProcessing = false;
     hideProcessingBanner();

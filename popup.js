@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const apiKeyInput = document.getElementById('api-key');
   const saveBtn = document.getElementById('save-key');
   const statusMsg = document.getElementById('status-msg');
+  const clearCacheBtn = document.getElementById('clear-cache');
+  const cacheStatusMsg = document.getElementById('cache-status-msg');
 
   // Load saved settings
   chrome.storage.sync.get(['enabled', 'openaiApiKey', 'individualTranslations', 'partitioningEnabled', 'limitSingleParagraph'], (result) => {
@@ -57,4 +59,32 @@ document.addEventListener('DOMContentLoaded', () => {
       statusMsg.textContent = '';
     }, 3000);
   }
+
+  function showCacheStatus(msg, color) {
+    cacheStatusMsg.textContent = msg;
+    cacheStatusMsg.style.color = color;
+    setTimeout(() => {
+      cacheStatusMsg.textContent = '';
+    }, 3000);
+  }
+
+  // Clear translation cache
+  clearCacheBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'CLEAR_CACHE' }, (response) => {
+      if (chrome.runtime.lastError) {
+        showCacheStatus('Error: ' + chrome.runtime.lastError.message, 'red');
+        return;
+      }
+      if (response && response.success) {
+        const count = response.count || 0;
+        if (count > 0) {
+          showCacheStatus(`Cleared ${count} cached translation${count === 1 ? '' : 's'}`, 'green');
+        } else {
+          showCacheStatus('Cache is already empty', '#666');
+        }
+      } else {
+        showCacheStatus('Failed to clear cache', 'red');
+      }
+    });
+  });
 });
