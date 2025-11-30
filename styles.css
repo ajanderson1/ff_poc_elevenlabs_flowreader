@@ -296,3 +296,9 @@ html[data-theme="dark"] .clause-debug-highlight.elt-hovered {
 #preview-content span[c] {
     cursor: pointer;
 }
+
+/* Meaning block wrapper - inline element that includes whitespace between words */
+.elt-meaning-block {
+    display: inline;
+    cursor: pointer;
+}
