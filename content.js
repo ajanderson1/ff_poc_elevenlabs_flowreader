@@ -1314,7 +1314,11 @@ function navigateMeaningBlocks(direction, state) {
     // Debounce the actual seek to prevent audio snippets during rapid pressing
     // Only execute the seek after the threshold expires without another press
     state.seekTimer = setTimeout(() => {
-        if (targetIndex >= 0 && targetIndex < boundaries.length) {
+        // For right navigation: only seek if we're actually moving forward
+        // (prevents seeking to start of current block when at the end)
+        const shouldSeek = direction === 'left' || targetIndex > state.baseIndex;
+
+        if (shouldSeek && targetIndex >= 0 && targetIndex < boundaries.length) {
             seekToSpan(boundaries[targetIndex].firstSpan);
         }
         state.seekTimer = null;
@@ -1414,7 +1418,10 @@ function navigateSentences(direction, state) {
 
     // Debounce the actual seek to prevent audio snippets during rapid pressing
     state.seekTimer = setTimeout(() => {
-        if (targetIndex >= 0 && targetIndex < boundaries.length) {
+        // For right navigation: only seek if we're actually moving forward
+        const shouldSeek = direction === 'left' || targetIndex > state.baseIndex;
+
+        if (shouldSeek && targetIndex >= 0 && targetIndex < boundaries.length) {
             seekToSpan(boundaries[targetIndex].firstSpan);
         }
         state.seekTimer = null;
