@@ -636,7 +636,6 @@ function renderSegmentations(p, alignedSegments) {
             debugElement: debugEl,
             wrapper: wrapper,  // Store wrapper for cleanup and hover
             type: segment.type,
-            colorIndex: index % SEGMENT_COLOR_PALETTE.length,
             translation: segment.translation,
             spans: spans || []
         };
