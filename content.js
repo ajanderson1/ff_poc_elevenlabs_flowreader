@@ -1428,8 +1428,56 @@ function forceHighlightUpdate(targetSpan) {
 }
 
 /**
+ * Check if ElevenLabs audio is currently playing
+ * @returns {boolean} True if audio is playing
+ */
+function isAudioPlaying() {
+    // When audio is playing, the button shows "Pause" label
+    // When paused, it shows "Play" label
+    const pauseBtn = document.querySelector('[aria-label="Pause"]');
+    return pauseBtn !== null;
+}
+
+/**
+ * Toggle play/pause state of ElevenLabs audio player
+ * @returns {boolean} True if button was found and clicked
+ */
+function togglePlayPause() {
+    const selectors = [
+        '[data-testid="play-pause-button"]',
+        '[aria-label="Play"]',
+        '[aria-label="Pause"]',
+        'button[aria-label*="Play"]',
+        'button[aria-label*="Pause"]',
+        'button[class*="play" i]',
+        'button[class*="pause" i]',
+        '[class*="PlayPause"]',
+        '[class*="playPause"]',
+        'button:has(svg[class*="play" i])',
+        'button:has(svg[class*="pause" i])',
+        '.player-controls button:first-child',
+        '[class*="player"] button:first-child',
+        'button:has([class*="Play"])',
+        'button:has([class*="Pause"])'
+    ];
+
+    for (const selector of selectors) {
+        try {
+            const btn = document.querySelector(selector);
+            if (btn) {
+                btn.click();
+                return true;
+            }
+        } catch (err) {
+            // :has() selector might not be supported in all contexts
+        }
+    }
+    return false;
+}
+
+/**
  * Seek audio to a specific span by simulating user interaction
- * Uses full event sequence to ensure ElevenLabs updates highlighting
+ * Uses pause-seek-resume pattern to prevent audio clipping
  * Includes verification and fallback to ensure highlighting stays in sync
  * @param {HTMLSpanElement} span - The span to seek to
  */
@@ -1439,37 +1487,69 @@ function seekToSpan(span) {
     const targetC = span.getAttribute('c');
     Logger.log("Navigation: seeking to c=" + targetC);
 
-    // Get coordinates for realistic event positioning
-    const rect = span.getBoundingClientRect();
-    const clientX = rect.left + rect.width / 2;
-    const clientY = rect.top + rect.height / 2;
+    // Check if audio is currently playing - we'll need to resume after seek
+    const wasPlaying = isAudioPlaying();
 
-    // Try dispatching a full pointer/mouse event sequence
-    // ElevenLabs may listen for these rather than just 'click'
-    const eventOptions = {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX,
-        clientY,
-        screenX: clientX,
-        screenY: clientY
+    // Pause audio before seeking to prevent clipping
+    if (wasPlaying) {
+        Logger.debug("Navigation: pausing audio before seek");
+        togglePlayPause();
+    }
+
+    // Delay seek events to let pause fully take effect
+    // This prevents seeking to wrong position during transitional state
+    const performSeek = () => {
+        // Get coordinates for realistic event positioning
+        const rect = span.getBoundingClientRect();
+        const clientX = rect.left + rect.width / 2;
+        const clientY = rect.top + rect.height / 2;
+
+        // Try dispatching a full pointer/mouse event sequence
+        // ElevenLabs may listen for these rather than just 'click'
+        const eventOptions = {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX,
+            clientY,
+            screenX: clientX,
+            screenY: clientY
+        };
+
+        // Dispatch pointer events (modern approach)
+        span.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
+        span.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
+
+        // Also dispatch mouse events for compatibility
+        span.dispatchEvent(new MouseEvent('mousedown', { ...eventOptions, button: 0 }));
+        span.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, button: 0 }));
+        span.dispatchEvent(new MouseEvent('click', { ...eventOptions, button: 0 }));
+
+        // Verify highlighting and resume playback after a brief delay
+        // ElevenLabs may take a moment to update React state
+        setTimeout(() => {
+            verifyAndFixHighlight(span, targetC);
+
+            // Resume playback only if:
+            // 1. Audio was playing before we started
+            // 2. Audio is currently paused (click didn't auto-start it)
+            if (wasPlaying && !isAudioPlaying()) {
+                setTimeout(() => {
+                    Logger.debug("Navigation: resuming audio after seek");
+                    togglePlayPause();
+                }, 50);
+            } else if (wasPlaying && isAudioPlaying()) {
+                Logger.debug("Navigation: audio auto-resumed from click, no toggle needed");
+            }
+        }, 50);
     };
 
-    // Dispatch pointer events (modern approach)
-    span.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
-    span.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1, pointerType: 'mouse' }));
-
-    // Also dispatch mouse events for compatibility
-    span.dispatchEvent(new MouseEvent('mousedown', { ...eventOptions, button: 0 }));
-    span.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, button: 0 }));
-    span.dispatchEvent(new MouseEvent('click', { ...eventOptions, button: 0 }));
-
-    // Verify and fix highlighting after a brief delay
-    // ElevenLabs may take a moment to update React state
-    setTimeout(() => {
-        verifyAndFixHighlight(span, targetC);
-    }, 50);
+    // If we paused, wait for it to take effect before seeking
+    if (wasPlaying) {
+        setTimeout(performSeek, 50);
+    } else {
+        performSeek();
+    }
 }
 
 /**
