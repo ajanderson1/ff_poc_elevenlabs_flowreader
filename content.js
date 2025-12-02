@@ -1546,7 +1546,7 @@ function seekToSpan(span) {
 
     // If we paused, wait for it to take effect before seeking
     if (wasPlaying) {
-        setTimeout(performSeek, 50);
+        setTimeout(performSeek, 18);
     } else {
         performSeek();
     }
