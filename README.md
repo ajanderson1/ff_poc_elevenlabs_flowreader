@@ -1,6 +1,6 @@
 # ElevenLabs Reader Translator
 
-A Chrome extension that injects inline translations into [ElevenLabs Reader](https://elevenreader.io) pages. Uses OpenAI's GPT-4o-mini to split text into grammatical "meaning blocks" and display translations as hovering overlays above the original text.
+A Chrome extension that injects inline translations into [ElevenLabs Reader](https://elevenreader.io) pages. Uses OpenAI's GPT-5-mini to split text into grammatical "meaning blocks" and display translations as hovering overlays above the original text.
 
 ## Features
 
@@ -73,13 +73,13 @@ After modifying code:
 
 ### Debugging
 
-- Console logs are prefixed with `[ELT]`
-- Filter in DevTools with: `/^\[ELT\]/`
+- Console logs are prefixed with `[FF]`
+- Filter in DevTools with: `/^\[FF\]/`
 
 ## Requirements
 
 - Chrome browser (Manifest V3 compatible)
-- OpenAI API key with access to GPT-4o-mini
+- OpenAI API key with access to GPT-5-mini
 - Active internet connection for API calls
 
 ## License
