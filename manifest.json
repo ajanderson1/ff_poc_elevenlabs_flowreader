@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ElevenLabs Reader Translator",
+  "name": "Frictionless FlowReader",
   "version": "1.0",
   "description": "Injects inline translations into ElevenLabs Reader.",
   "permissions": [
@@ -13,8 +13,17 @@
     "https://elevenreader.io/*",
     "https://*.elevenreader.io/*"
   ],
+  "icons": {
+    "16": "assets/favicons/favicon_dm.png",
+    "48": "assets/favicons/favicon_dm.png",
+    "128": "assets/favicons/favicon_dm.png"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/favicons/favicon_dm.png",
+      "48": "assets/favicons/favicon_dm.png"
+    }
   },
   "background": {
     "service_worker": "background.js"

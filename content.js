@@ -2,7 +2,7 @@
 // Filter in DevTools console with: /^\[ELT\]/
 const LOG_PREFIX = '[ELT]';
 const Logger = {
-    _enabled: true,
+    _enabled: false, // Controlled by Debug Logging toggle in popup
     _verboseErrors: false, // Set true to see full stack traces
 
     log(...args) {
@@ -1189,10 +1189,11 @@ function updateHighlightingVisibility(partitioningEnabled) {
 }
 
 function init() {
-    chrome.storage.sync.get(['enabled', 'partitioningEnabled', 'individualTranslations', 'limitSingleParagraph'], (result) => {
+    chrome.storage.sync.get(['enabled', 'partitioningEnabled', 'individualTranslations', 'limitSingleParagraph', 'debugLogging'], (result) => {
         if (result.enabled === false) return;
         CONFIG.individualTranslations = result.individualTranslations !== false; // Default true
         CONFIG.limitSingleParagraph = result.limitSingleParagraph === true; // Default false (process all paragraphs)
+        Logger._enabled = result.debugLogging === true; // Default false
 
         const contentDiv = document.getElementById('preview-content');
         if (!contentDiv) {
@@ -2025,9 +2026,10 @@ function reinitialize() {
     Logger.log("Reinitializing extension...");
 
     // Reload settings
-    chrome.storage.sync.get(['partitioningEnabled', 'individualTranslations', 'limitSingleParagraph'], (result) => {
+    chrome.storage.sync.get(['partitioningEnabled', 'individualTranslations', 'limitSingleParagraph', 'debugLogging'], (result) => {
         CONFIG.individualTranslations = result.individualTranslations !== false;
         CONFIG.limitSingleParagraph = result.limitSingleParagraph === true;
+        Logger._enabled = result.debugLogging === true;
 
         // Apply highlighting visibility
         updateHighlightingVisibility(result.partitioningEnabled);

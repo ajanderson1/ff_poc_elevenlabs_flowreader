@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const individualTranslationsToggle = document.getElementById('individual-translations');
   const partitioningToggle = document.getElementById('partitioning-enabled');
   const limitSingleParagraphToggle = document.getElementById('limit-single-paragraph');
+  const debugLoggingToggle = document.getElementById('debug-logging');
   const apiKeyInput = document.getElementById('api-key');
   const saveBtn = document.getElementById('save-key');
   const statusMsg = document.getElementById('status-msg');
@@ -10,11 +11,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const cacheStatusMsg = document.getElementById('cache-status-msg');
 
   // Load saved settings
-  chrome.storage.sync.get(['enabled', 'openaiApiKey', 'individualTranslations', 'partitioningEnabled', 'limitSingleParagraph'], (result) => {
+  chrome.storage.sync.get(['enabled', 'openaiApiKey', 'individualTranslations', 'partitioningEnabled', 'limitSingleParagraph', 'debugLogging'], (result) => {
     toggle.checked = result.enabled !== false; // Default true
     individualTranslationsToggle.checked = result.individualTranslations !== false; // Default true
     partitioningToggle.checked = result.partitioningEnabled === true; // Default false (debug feature)
     limitSingleParagraphToggle.checked = result.limitSingleParagraph === true; // Default false (process all paragraphs)
+    debugLoggingToggle.checked = result.debugLogging === true; // Default false
     if (result.openaiApiKey) {
       apiKeyInput.value = result.openaiApiKey;
     }
@@ -38,6 +40,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Save limit single paragraph state
   limitSingleParagraphToggle.addEventListener('change', () => {
     chrome.storage.sync.set({ limitSingleParagraph: limitSingleParagraphToggle.checked });
+  });
+
+  // Save debug logging state
+  debugLoggingToggle.addEventListener('change', () => {
+    chrome.storage.sync.set({ debugLogging: debugLoggingToggle.checked });
   });
 
   // Save API Key

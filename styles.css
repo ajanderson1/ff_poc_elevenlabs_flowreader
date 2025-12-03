@@ -124,7 +124,7 @@
     pointer-events: none;
     box-sizing: border-box;
     /* Soft cyan/light blue underline to match the reference */
-    border-bottom: 2.5px solid rgba(135, 206, 235, 0.85);
+    border-bottom: 1.5px solid rgba(135, 206, 235, 0.85);
     border-radius: 1px;
 }
 

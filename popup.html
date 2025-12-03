@@ -2,7 +2,7 @@
 <html>
 
 <head>
-  <title>ElevenLabs Translator</title>
+  <title>Frictionless FlowReader</title>
   <style>
     body {
       width: 200px;
@@ -110,10 +110,14 @@
     }
 
     .api-key-section button {
-      background-color: #4CAF50;
+      background-color: #6366f1;
       color: white;
       border: none;
       border-radius: 4px;
+    }
+
+    .api-key-section button:hover {
+      background-color: #4f46e5;
     }
 
     #status-msg {
@@ -151,7 +155,7 @@
     }
 
     .clear-cache-btn {
-      background-color: #ff9800;
+      background-color: #64748b;
       color: white;
       border: none;
       border-radius: 4px;
@@ -159,7 +163,7 @@
     }
 
     .clear-cache-btn:hover {
-      background-color: #f57c00;
+      background-color: #475569;
     }
 
     #cache-status-msg {
@@ -167,12 +171,92 @@
       font-size: 0.85em;
       min-height: 1.2em;
     }
+
+    /* Logo switching for light/dark mode */
+    .logo-light {
+      display: block;
+    }
+    .logo-dark {
+      display: none;
+    }
+
+    /* Dark mode styles */
+    @media (prefers-color-scheme: dark) {
+      body {
+        background-color: #1a1a1a;
+        color: #e0e0e0;
+      }
+
+      .logo-light {
+        display: none;
+      }
+      .logo-dark {
+        display: block;
+      }
+
+      .slider {
+        background-color: #555;
+      }
+
+      .slider:before {
+        background-color: #ccc;
+      }
+
+      input:checked+.slider {
+        background-color: #4a9eff;
+      }
+
+      .api-key-section {
+        border-top-color: #444;
+      }
+
+      .api-key-section input[type="password"] {
+        background-color: #2a2a2a;
+        border-color: #555;
+        color: #e0e0e0;
+      }
+
+      .api-key-section input[type="password"]::placeholder {
+        color: #888;
+      }
+
+      .section-header {
+        border-bottom-color: #444;
+      }
+
+      .group-label {
+        color: #999;
+      }
+
+      .footer {
+        border-top-color: #444;
+        color: #999;
+      }
+
+      .api-key-section button {
+        background-color: #818cf8;
+      }
+
+      .api-key-section button:hover {
+        background-color: #6366f1;
+      }
+
+      .clear-cache-btn {
+        background-color: #94a3b8;
+      }
+
+      .clear-cache-btn:hover {
+        background-color: #64748b;
+      }
+    }
   </style>
 </head>
 
 <body>
   <div class="container">
-    <h1>ElevenLabs Translator</h1>
+    <img src="assets/FlowReader_lm.png" alt="FlowReader Logo" class="logo-light" style="width: 100%; max-width: 180px; margin: 0 auto 10px;">
+    <img src="assets/FlowReader_dm.png" alt="FlowReader Logo" class="logo-dark" style="width: 100%; max-width: 180px; margin: 0 auto 10px;">
+    <h1 style="display: none; font-size: 14px; text-align: center; margin: 0 0 10px;">Frictionless FlowReader<br><span style="font-size: 11px; font-weight: normal; color: #666;">(elevenlabs POC)</span></h1>
 
     <div class="control-group">
       <label class="switch">
@@ -199,6 +283,8 @@
       <span>Individual Translations</span>
     </div>
 
+    <div class="section-header">Testing</div>
+
     <div class="control-group">
       <label class="switch">
         <input type="checkbox" id="partitioning-enabled">
@@ -207,14 +293,20 @@
       <span>Show Meaning Blocks</span>
     </div>
 
-    <div class="section-header">Testing</div>
-
     <div class="control-group">
       <label class="switch">
         <input type="checkbox" id="limit-single-paragraph">
         <span class="slider round"></span>
       </label>
       <span>Limit to Single Paragraph</span>
+    </div>
+
+    <div class="control-group">
+      <label class="switch">
+        <input type="checkbox" id="debug-logging">
+        <span class="slider round"></span>
+      </label>
+      <span>Debug Logging</span>
     </div>
 
     <button id="clear-cache" class="clear-cache-btn">Clear Translation Cache</button>
