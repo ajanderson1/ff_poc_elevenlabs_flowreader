@@ -166,20 +166,19 @@ body.elt-show-highlighting .elt-underline-container {
     display: block !important;
 }
 
-/* Hover zone - invisible element covering entire meaning block for continuous hover */
+/* Hover zone - visual highlight covering entire meaning block */
+/* pointer-events: none so ElevenLabs word highlighting still works */
 .elt-hover-zone {
     position: absolute;
-    pointer-events: auto;
-    cursor: pointer;
-    z-index: 10;
+    pointer-events: none;
+    z-index: 5;  /* Below text so ElevenLabs highlighting shows on top */
     border-radius: 3px;
     /* Transparent by default */
     background-color: transparent;
-    transition: background-color 0.1s ease;
+    transition: background-color 0.15s ease;
 }
 
-/* Light blue highlight on hover */
-.elt-hover-zone:hover,
+/* Light blue highlight when block is hovered (class added via JS) */
 .elt-hover-zone.elt-hovered {
     background-color: rgba(135, 206, 235, 0.35);
 }
@@ -190,12 +189,7 @@ body.elt-show-highlighting .elt-underline-container {
     top: 0;
     left: 0;
     pointer-events: none;
-    z-index: 10;
-}
-
-/* Allow hover zones inside container to receive events */
-.elt-hover-zone-container .elt-hover-zone {
-    pointer-events: auto;
+    z-index: 5;
 }
 
 /* Individual translation pill - white text on black background */

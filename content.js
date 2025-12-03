@@ -780,7 +780,9 @@ function updateOverlayPositions() {
                 centerX = lineLeft + (line.width / 2);
             }
 
-            // --- HOVER ZONE (covers entire meaning block line for continuous hover) ---
+            // --- HOVER ZONE (covers entire meaning block line for visual highlight) ---
+            // pointer-events: none so ElevenLabs word highlighting still works
+            // Hover detection is done via document-level mousemove
             if (hoverZoneEl) {
                 const hoverZone = document.createElement('div');
                 hoverZone.className = 'elt-hover-zone';
@@ -789,21 +791,6 @@ function updateOverlayPositions() {
                 hoverZone.style.left = `${lineLeft - 2}px`;
                 hoverZone.style.width = `${line.width + 4}px`;
                 hoverZone.style.height = `${line.height + 4}px`;
-
-                // Attach hover events to this zone
-                hoverZone.addEventListener('mouseenter', () => showIndividualTranslation(item));
-                hoverZone.addEventListener('mouseleave', () => hideIndividualTranslation(item));
-
-                // Forward clicks to the text below for audio seeking
-                hoverZone.addEventListener('click', (e) => {
-                    hoverZone.style.pointerEvents = 'none';
-                    const elementBelow = document.elementFromPoint(e.clientX, e.clientY);
-                    hoverZone.style.pointerEvents = 'auto';
-                    if (elementBelow && elementBelow !== hoverZone) {
-                        elementBelow.click();
-                    }
-                });
-
                 hoverZoneEl.appendChild(hoverZone);
             }
 
@@ -1804,6 +1791,55 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
             Logger.log("individualTranslations changed:", changes.individualTranslations.newValue);
             CONFIG.individualTranslations = changes.individualTranslations.newValue !== false;
         }
+    }
+});
+
+// --- Document-level hover detection for meaning blocks ---
+// Uses mousemove instead of direct event listeners so ElevenLabs word highlighting still works
+let currentlyHoveredBlock = null;
+
+document.addEventListener('mousemove', (e) => {
+    if (!CONFIG.individualTranslations) return;
+    if (translationsVisible) return; // Don't interfere when all translations shown
+
+    const mouseX = e.clientX;
+    const mouseY = e.clientY;
+
+    // Find which meaning block (if any) the mouse is over
+    let hoveredBlock = null;
+
+    for (const item of activeOverlays) {
+        if (!item.hoverZoneElement) continue;
+
+        const zones = item.hoverZoneElement.querySelectorAll('.elt-hover-zone');
+        for (const zone of zones) {
+            const rect = zone.getBoundingClientRect();
+            if (mouseX >= rect.left && mouseX <= rect.right &&
+                mouseY >= rect.top && mouseY <= rect.bottom) {
+                hoveredBlock = item;
+                break;
+            }
+        }
+        if (hoveredBlock) break;
+    }
+
+    // If hovered block changed, update highlights
+    if (hoveredBlock !== currentlyHoveredBlock) {
+        // Hide previous block's highlight
+        if (currentlyHoveredBlock) {
+            hideIndividualTranslation(currentlyHoveredBlock);
+            const zones = currentlyHoveredBlock.hoverZoneElement?.querySelectorAll('.elt-hover-zone');
+            zones?.forEach(z => z.classList.remove('elt-hovered'));
+        }
+
+        // Show new block's highlight
+        if (hoveredBlock) {
+            showIndividualTranslation(hoveredBlock);
+            const zones = hoveredBlock.hoverZoneElement?.querySelectorAll('.elt-hover-zone');
+            zones?.forEach(z => z.classList.add('elt-hovered'));
+        }
+
+        currentlyHoveredBlock = hoveredBlock;
     }
 });
 
