@@ -13,111 +13,41 @@
  * System prompt for GPT-4o-mini encoding pedagogical rules from dev/SEGMENTATION.md.
  * Designed for French-to-English translation with meaning block segmentation.
  */
-const SYSTEM_PROMPT = `You are a French-to-English translator specializing in pedagogical text segmentation.
+const SYSTEM_PROMPT = `You segment French text into meaning blocks and translate to English. Return JSON.
 
-TASK: Segment French text into "Meaning Blocks" - intuitive units of thought for language learners.
+=== INPUT ===
+Array of words with sequential indices: [{"i":0,"w":"Le"},{"i":1,"w":"chat"},{"i":2,"w":"dort."}]
 
-=== CORE PHILOSOPHY ===
-1. Granular Structure: Isolate structural tools (fixed prepositions) for independent learning
-2. Fluid Action: Keep verb phrases cohesive with time markers
-3. No Crumbs: Avoid tiny, low-value chunks
+=== OUTPUT (JSON) ===
+{"blocks":[{"s":0,"e":1,"t":"The cat"},{"s":2,"e":2,"t":"sleeps."}]}
 
-=== VERB HANDLING (CRITICAL) ===
+=== BLOCK SIZE ===
+Target: 2-5 words per block. Maximum: 6 words. Split aggressively.
 
-LINKING VERBS (être, devenir, rester, sembler, paraître):
-  → ALWAYS merge with the following attribute
-  → Example: [reste un défi majeur] NOT [reste] [un défi majeur]
-  → Example: [est difficile] NOT [est] [difficile]
+=== ALWAYS SPLIT AT ===
+• Prepositions: dès, depuis, pour, dans, entre, après, avant, par, vers, sous, sur
+• Conjunctions: que, qui, où, dont, mais, ou, et, car, donc
+• Fixed starts: "Face à" "En raison de" "Grâce à" "À cause de"
+• Markers: "Cependant," "Toutefois," "En effet," "Par ailleurs,"
+• After long subjects (4+ words): split before the verb
+• At commas (usually)
 
-ACTION VERBS:
-  → Isolate the conjugated verb group
-  → Example: [vont diminuer]
-  → Example: [a commencé]
+=== KEEP TOGETHER (max 5 words) ===
+• Linking verb + attribute: "est un problème" "reste célèbre"
+• Short noun phrase: "la montée des eaux"
+• Verb + short adverb: "a dit hier"
 
-ADVERB & CONJUNCTION ABSORPTION:
-  → Include short adverbs (hier, déjà, bientôt, souvent) inside verb blocks
-  → Include "que" if it follows immediately
-  → Example: [a annoncé hier que]
-  → Example: [a souvent dit]
+PUNCTUATION: Attach to preceding word, never standalone.
 
-NEGATION:
-  → Keep standard negation (ne... pas/plus/jamais) inside the verb block
-  → Example: [ne vont pas diminuer]
+=== EXAMPLE ===
+Input: "La montée des eaux est un problème récurrent dès l'arrivée des pluies."
+Good: [La montée des eaux] [est un problème récurrent] [dès l'arrivée des pluies.]
+Bad: [La montée des eaux est un problème récurrent dès l'arrivée des pluies.] (too long!)
 
-=== FIXED EXPRESSIONS (MUST ISOLATE) ===
-
-These are reusable structural tools the learner needs to recognize - ALWAYS split them:
-- Face à
-- En raison de
-- Grâce à
-- Quant à
-- À cause de
-- Au lieu de
-- Par rapport à
-- En dépit de
-
-Example: [Face à] [la colère des usagers]
-NOT: [Face à la colère des usagers]
-
-=== DISCOURSE MARKERS (MUST ISOLATE) ===
-
-Isolate these logical/tonal shift markers WITH their punctuation:
-- Cependant
-- Néanmoins
-- Toutefois
-- Par ailleurs
-- En effet
-- En revanche
-- Par contre
-- De plus
-
-Example: [Cependant,] NOT [Cependant, la situation...]
-
-=== NOUN PHRASES ===
-
-Keep the core noun phrase together:
-- Combine: Determiner + Noun + Adjectives/Modifiers
-- Example: [la colère des usagers]
-- Example: [les coupures d'électricité]
-
-Proper nouns: Always isolate as distinct blocks
-- Example: [la Jirama]
-
-=== PUNCTUATION ===
-
-CRITICAL: Punctuation must NEVER stand alone.
-- ALWAYS attach to the preceding block
-- Correct: [Cependant,]
-- Incorrect: [Cependant] [,]
-
-=== INPUT/OUTPUT FORMAT ===
-
-INPUT: JSON with "words" array. Each word has:
-- "c": unique position identifier (integer from the DOM)
-- "text": the word content
-
-OUTPUT: JSON with "blocks" array. Each block has:
-- "start_c": c value of first word in block (MUST exist in input)
-- "end_c": c value of last word in block (MUST exist in input)
-- "original": the French text of the block
-- "translation": English translation
-
-CRITICAL CONSTRAINT: start_c and end_c MUST be exact "c" values from the input words array. Any invented c values will cause errors.
-
-=== WORKED EXAMPLE ===
-
-Input text: "Face à la colère des usagers, la Jirama a annoncé hier que les coupures vont diminuer. Cependant, l'approvisionnement reste un défi."
-
-Correct segmentation:
-1. [Face à] - Fixed expression (ISOLATED as structural tool)
-2. [la colère des usagers,] - Noun phrase + punctuation
-3. [la Jirama] - Proper noun (ISOLATED)
-4. [a annoncé hier que] - Verb + adverb + conjunction (MERGED)
-5. [les coupures] - Noun phrase
-6. [vont diminuer.] - Action verb + punctuation
-7. [Cependant,] - Discourse marker (ISOLATED with punctuation)
-8. [l'approvisionnement] - Noun phrase
-9. [reste un défi.] - Linking verb + attribute (MERGED - "reste" alone is too weak)`;
+=== CONSTRAINTS ===
+• s and e must be valid indices from input (0 to n-1)
+• Blocks must cover all words: no gaps, no overlaps
+• Blocks must be in order: each block's s > previous block's e`;
 
 
 // =============================================================================
@@ -193,6 +123,22 @@ const DISCOURSE_MARKERS = [
     'autrement dit',
     'en somme',
     'bref'
+];
+
+/**
+ * Circumstantial prepositions that introduce phrases which should be isolated.
+ * These indicate time, place, manner, cause, or specification.
+ */
+const CIRCUMSTANTIAL_PREPOSITIONS = [
+    // Time
+    'dès', 'depuis', 'pendant', 'après', 'avant', 'lors de', 'durant',
+    // Place/Location
+    'dans', 'entre', 'vers', 'sous', 'sur', 'derrière', 'devant',
+    // Specification/Purpose
+    'pour', 'afin de', 'avec', 'sans', 'selon', 'malgré',
+    // Manner
+    'en', 'par'
+    // Note: 'à' is too common and often grammatical, not circumstantial
 ];
 
 /**
@@ -347,6 +293,70 @@ function checkOrphanPunctuation(blocks) {
 }
 
 /**
+ * Check for circumstantial phrases buried inside larger blocks.
+ * Circumstantial phrases (time, place, manner, cause) should be isolated.
+ * @param {Array} blocks - Array of block objects with 'original' field
+ * @returns {Array} Array of violation objects
+ */
+function checkCircumstantialPhraseBuried(blocks) {
+    const violations = [];
+
+    for (let i = 0; i < blocks.length; i++) {
+        const original = (blocks[i].original || '').toLowerCase();
+        const words = original.split(/\s+/).filter(w => w.length > 0);
+
+        // Skip short blocks (3 words or less) - they're probably fine
+        if (words.length <= 3) continue;
+
+        // Look for circumstantial prepositions in the middle of the block
+        for (let j = 1; j < words.length - 1; j++) {
+            const word = words[j].replace(/[.,;:!?'"]/g, '');
+
+            // Check single-word prepositions
+            if (CIRCUMSTANTIAL_PREPOSITIONS.includes(word)) {
+                // This preposition is buried in the middle of a block
+                const beforePrep = words.slice(0, j).join(' ');
+                const fromPrep = words.slice(j).join(' ');
+
+                // Only flag if there's substantial content before AND after
+                if (beforePrep.length > 3 && fromPrep.length > 5) {
+                    violations.push({
+                        type: 'circumstantial_phrase_buried',
+                        message: `Circumstantial phrase starting with "${word}" should be isolated in "${blocks[i].original}"`,
+                        severity: 'warning',
+                        blockIndex: i,
+                        suggestion: `Split into: [${beforePrep}] [${fromPrep}]`
+                    });
+                    break; // Only report first violation per block
+                }
+            }
+
+            // Check two-word prepositions (e.g., "lors de")
+            if (j < words.length - 1) {
+                const twoWords = word + ' ' + words[j + 1].replace(/[.,;:!?'"]/g, '');
+                if (CIRCUMSTANTIAL_PREPOSITIONS.includes(twoWords)) {
+                    const beforePrep = words.slice(0, j).join(' ');
+                    const fromPrep = words.slice(j).join(' ');
+
+                    if (beforePrep.length > 3 && fromPrep.length > 8) {
+                        violations.push({
+                            type: 'circumstantial_phrase_buried',
+                            message: `Circumstantial phrase starting with "${twoWords}" should be isolated in "${blocks[i].original}"`,
+                            severity: 'warning',
+                            blockIndex: i,
+                            suggestion: `Split into: [${beforePrep}] [${fromPrep}]`
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return violations;
+}
+
+/**
  * Validate semantic correctness of blocks against pedagogical rules.
  * @param {Array} blocks - Array of block objects from LLM response
  * @param {Array} words - Original word data (for context, currently unused)
@@ -360,6 +370,7 @@ function validateSemantics(blocks, words) {
     violations.push(...checkFixedExpressionBuried(blocks));
     violations.push(...checkDiscourseMarkerAbsorbed(blocks));
     violations.push(...checkOrphanPunctuation(blocks));
+    violations.push(...checkCircumstantialPhraseBuried(blocks));
 
     // Determine if we should retry based on violation severity
     const hasErrors = violations.some(v => v.severity === 'error');

@@ -248,13 +248,21 @@ async function handlePositionBasedPartitioning(wordData) {
         throw new Error('API Key not found. Please set it in the extension popup.');
     }
 
-    var userContent = JSON.stringify({ words: wordData.words });
+    // Create index-to-c mapping and simplified word array for LLM
+    // This makes the LLM's job trivial: just use sequential indices 0,1,2,3...
+    const indexToCMap = {};
+    const simplifiedWords = wordData.words.map((word, index) => {
+        indexToCMap[index] = word.c;
+        return { i: index, w: word.text };
+    });
+
+    var userContent = JSON.stringify(simplifiedWords);
 
     // Debug logging for LLM input
     console.log('ElevenLabs Translator: Sending to LLM');
     console.log('Word count:', wordData.words.length);
-    console.log('Valid C values:', wordData.words.map(w => w.c));
-    console.log('Words preview:', wordData.words.slice(0, 5).map(w => `${w.c}:"${w.text}"`).join(', '));
+    console.log('Index mapping sample:', Object.entries(indexToCMap).slice(0, 5).map(([i, c]) => `${i}->${c}`).join(', '));
+    console.log('Words preview:', simplifiedWords.slice(0, 5).map(w => `${w.i}:"${w.w}"`).join(', '));
 
     const maxRetries = getMaxRetries();
     let lastError = null;
@@ -322,6 +330,40 @@ async function handlePositionBasedPartitioning(wordData) {
 
             // Debug logging for raw LLM response
             console.log('ElevenLabs Translator: Raw LLM response:', JSON.stringify(parsed, null, 2));
+
+            // Convert simplified format (s, e, t) back to original format (start_c, end_c, original, translation)
+            if (parsed.blocks && Array.isArray(parsed.blocks)) {
+                parsed.blocks = parsed.blocks.map(block => {
+                    // Handle both old format (start_c, end_c) and new format (s, e)
+                    const startIndex = block.s !== undefined ? block.s : block.start_c;
+                    const endIndex = block.e !== undefined ? block.e : block.end_c;
+
+                    // Map indices back to real c values
+                    const start_c = indexToCMap[startIndex] !== undefined ? indexToCMap[startIndex] : startIndex;
+                    const end_c = indexToCMap[endIndex] !== undefined ? indexToCMap[endIndex] : endIndex;
+
+                    // Reconstruct original text from words if not provided
+                    let original = block.original || '';
+                    if (!original && startIndex !== undefined && endIndex !== undefined) {
+                        const wordsInBlock = [];
+                        for (let idx = startIndex; idx <= endIndex; idx++) {
+                            if (wordData.words[idx]) {
+                                wordsInBlock.push(wordData.words[idx].text);
+                            }
+                        }
+                        original = wordsInBlock.join(' ');
+                    }
+
+                    return {
+                        start_c: start_c,
+                        end_c: end_c,
+                        original: original,
+                        translation: block.t || block.translation || ''
+                    };
+                });
+            }
+
+            console.log('ElevenLabs Translator: Converted blocks:', parsed.blocks?.slice(0, 3));
 
             // Structural validation (existing)
             const structuralValidation = validateLLMResponse(parsed, wordData.words);
