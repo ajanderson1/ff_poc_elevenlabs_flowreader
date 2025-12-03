@@ -40,5 +40,11 @@
         "styles.css"
       ]
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["config/recommended_voices.txt"],
+      "matches": ["<all_urls>"]
+    }
   ]
 }

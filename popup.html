@@ -172,6 +172,132 @@
       min-height: 1.2em;
     }
 
+    /* Voice info section */
+    .voice-info-section {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .voice-info-section.success {
+      background-color: #d4edda;
+      border: 1px solid #28a745;
+    }
+
+    .voice-info-section.warning {
+      background-color: #fff3cd;
+      border: 1px solid #ffc107;
+    }
+
+    .voice-info-section.not-reader {
+      background-color: #f0f0f0;
+      border: 1px solid #ddd;
+      color: #666;
+    }
+
+    .voice-info-section .voice-label {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .voice-info-section .voice-name {
+      font-style: italic;
+    }
+
+    .voice-info-section.success .voice-name {
+      color: #155724;
+      font-weight: 500;
+    }
+
+    .voice-info-section .voice-warning {
+      margin-top: 6px;
+      color: #856404;
+    }
+
+    /* Voice banner image */
+    .voice-banner {
+      margin-top: 8px;
+      text-align: center;
+    }
+
+    .voice-banner img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    /* Voice recommendation message */
+    .voice-recommendation {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: #856404;
+    }
+
+    .voice-recommendation-text {
+      flex: 1;
+    }
+
+    /* Info icon with tooltip */
+    .info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      min-width: 16px;
+      border-radius: 50%;
+      background-color: #6b5a2a;
+      color: white;
+      font-size: 10px;
+      font-weight: bold;
+      cursor: help;
+      position: relative;
+    }
+
+    .info-icon:hover .tooltip {
+      display: block;
+    }
+
+    .tooltip {
+      display: none;
+      position: absolute;
+      bottom: 100%;
+      right: -10px;
+      margin-bottom: 8px;
+      padding: 8px 10px;
+      background-color: #333;
+      color: white;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: normal;
+      white-space: nowrap;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      right: 16px;
+      border-width: 6px;
+      border-style: solid;
+      border-color: #333 transparent transparent transparent;
+    }
+
+    .tooltip-title {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .tooltip-list {
+      margin: 0;
+      padding-left: 14px;
+    }
+
     /* Logo switching for light/dark mode */
     .logo-light {
       display: block;
@@ -248,6 +374,49 @@
       .clear-cache-btn:hover {
         background-color: #64748b;
       }
+
+      .voice-info-section.success {
+        background-color: #1e4a2a;
+        border-color: #28a745;
+        color: #90d9a0;
+      }
+
+      .voice-info-section.success .voice-name {
+        color: #90d9a0;
+      }
+
+      .voice-info-section.warning {
+        background-color: #4a3f1a;
+        border-color: #6b5a2a;
+        color: #ffc107;
+      }
+
+      .voice-info-section .voice-warning {
+        color: #ffc107;
+      }
+
+      .voice-info-section.not-reader {
+        background-color: #2a2a2a;
+        border-color: #444;
+        color: #888;
+      }
+
+      .voice-recommendation {
+        color: #ffc107;
+      }
+
+      .info-icon {
+        background-color: #ffc107;
+        color: #1a1a1a;
+      }
+
+      .tooltip {
+        background-color: #444;
+      }
+
+      .tooltip::after {
+        border-color: #444 transparent transparent transparent;
+      }
     }
   </style>
 </head>
@@ -264,6 +433,22 @@
         <span class="slider round"></span>
       </label>
       <span>Enable Extension</span>
+    </div>
+
+    <div id="voice-info" class="voice-info-section not-reader">
+      <div class="voice-label">Current Voice:</div>
+      <div class="voice-name" id="voice-name">Not on ElevenReader</div>
+      <div class="voice-warning" id="voice-warning" style="display: none;"></div>
+      <div class="voice-banner" id="voice-banner" style="display: none;"></div>
+      <div class="voice-recommendation" id="voice-recommendation" style="display: none;">
+        <span class="voice-recommendation-text">Consider using a recommended voice for optimal pronunciation.</span>
+        <span class="info-icon">i
+          <div class="tooltip">
+            <div class="tooltip-title">Recommended voices:</div>
+            <ul class="tooltip-list" id="recommended-voices-list"></ul>
+          </div>
+        </span>
+      </div>
     </div>
 
     <div class="api-key-section">

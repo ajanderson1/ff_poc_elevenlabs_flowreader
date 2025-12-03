@@ -2057,3 +2057,25 @@ function reinitialize() {
     });
 }
 
+// --- Message Handler for Popup Queries ---
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'GET_CURRENT_VOICE') {
+        // Find the "Read by" button and extract the voice name
+        const voiceButton = document.querySelector('button span.font-bold');
+        let voiceName = null;
+
+        if (voiceButton) {
+            voiceName = voiceButton.textContent?.trim() || null;
+        }
+
+        // Also check if we're on an ElevenReader page
+        const isElevenReaderPage = window.location.hostname.includes('elevenreader.io');
+
+        sendResponse({
+            voiceName: voiceName,
+            isElevenReaderPage: isElevenReaderPage
+        });
+        return true; // Keep channel open for async response
+    }
+});
+
