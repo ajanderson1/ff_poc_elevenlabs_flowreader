@@ -1,5 +1,8 @@
 // Background script for ElevenLabs Translator
 
+// Load prompt configuration, semantic validation, and retry strategy
+importScripts('prompts.js');
+
 // --- Cache Configuration ---
 const CACHE_PREFIX = 'translation_cache_';
 const CACHE_VERSION = 1;
@@ -67,34 +70,7 @@ async function clearAllCachedTranslations() {
     return cacheKeys.length;
 }
 
-// System prompt for Meaning Blocks partitioning
-const SYSTEM_PROMPT = `You are a French-to-English translator that segments text into meaningful blocks.
-
-TASK: Group the provided words into meaningful blocks and translate each block.
-
-INPUT FORMAT: JSON with "words" array. Each word has:
-- "c": unique position identifier (integer)
-- "text": the word content
-
-CRITICAL RULES:
-1. start_c and end_c MUST be exact "c" values from the input words array
-2. You CANNOT use any c value not present in the input - this causes errors
-3. Every word must belong to exactly one block (no gaps, no overlaps)
-4. Keep related words together: determiners+nouns, verbs+adverbs
-5. Proper nouns can be isolated as single-word blocks
-6. Attach punctuation to the preceding word's block
-
-OUTPUT FORMAT: JSON with "blocks" array. Each block has:
-- "start_c": c value of first word in block (MUST exist in input)
-- "end_c": c value of last word in block (MUST exist in input)
-- "original": the French text
-- "translation": English translation
-
-EXAMPLE:
-Input: {"words":[{"c":5,"text":"Le"},{"c":12,"text":"chat"},{"c":20,"text":"dort"}]}
-Output: {"blocks":[{"start_c":5,"end_c":12,"original":"Le chat","translation":"The cat"},{"start_c":20,"end_c":20,"original":"dort","translation":"sleeps"}]}
-
-Note: start_c and end_c are 5, 12, 20 - exactly matching the input c values.`;
+// System prompt is now loaded from prompts.js via SYSTEM_PROMPT constant
 
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.action === 'PARTITION_TEXT') {
@@ -252,14 +228,18 @@ function validateBlockCoverage(blocks, words) {
     console.log('ElevenLabs Translator: Block coverage validation completed');
 }
 
-// Retry configuration
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 1000;
+// Retry configuration is now loaded from prompts.js via getRetryConfig() and getMaxRetries()
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Handles position-based text partitioning with the LLM.
+ * Uses semantic validation and temperature escalation on retries.
+ * @param {object} wordData - Object with 'words' array containing {c, text} objects
+ * @returns {Promise<object>} Parsed LLM response with blocks array
+ */
 async function handlePositionBasedPartitioning(wordData) {
     var result = await chrome.storage.sync.get(['openaiApiKey']);
     var openaiApiKey = result.openaiApiKey;
@@ -276,21 +256,27 @@ async function handlePositionBasedPartitioning(wordData) {
     console.log('Valid C values:', wordData.words.map(w => w.c));
     console.log('Words preview:', wordData.words.slice(0, 5).map(w => `${w.c}:"${w.text}"`).join(', '));
 
-    var requestBody = {
-        model: 'gpt-4o-mini',
-        messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: userContent }
-        ],
-        temperature: 0.2,
-        response_format: { type: 'json_object' }
-    };
-
+    const maxRetries = getMaxRetries();
     let lastError = null;
+    let bestResult = null;  // Store best result in case all retries have semantic issues
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        // Get retry configuration with escalating temperature
+        const retryConfig = getRetryConfig(attempt);
+
+        // Build request body with dynamic temperature from retry config
+        var requestBody = {
+            model: 'gpt-4o-mini',
+            messages: [
+                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'user', content: userContent }
+            ],
+            temperature: retryConfig.temperature,
+            response_format: { type: 'json_object' }
+        };
+
         try {
-            console.log(`ElevenLabs Translator: API attempt ${attempt}/${MAX_RETRIES}`);
+            console.log(`ElevenLabs Translator: API attempt ${attempt}/${maxRetries} (temperature: ${retryConfig.temperature})`);
 
             var response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
@@ -337,21 +323,53 @@ async function handlePositionBasedPartitioning(wordData) {
             // Debug logging for raw LLM response
             console.log('ElevenLabs Translator: Raw LLM response:', JSON.stringify(parsed, null, 2));
 
-            // Validate response structure
-            const validation = validateLLMResponse(parsed, wordData.words);
-            if (!validation.valid) {
-                throw new Error('Invalid LLM response: ' + validation.error);
+            // Structural validation (existing)
+            const structuralValidation = validateLLMResponse(parsed, wordData.words);
+            if (!structuralValidation.valid) {
+                throw new Error('Structural: ' + structuralValidation.error);
             }
 
+            // Coverage validation (existing)
             validateBlockCoverage(parsed.blocks, wordData.words);
 
-            // Include token usage in the returned response
+            // Include token usage in the response
             parsed.tokenUsage = {
                 promptTokens: tokenUsage.prompt_tokens,
                 completionTokens: tokenUsage.completion_tokens
             };
 
-            return parsed;
+            // Semantic validation (NEW) - check pedagogical rules
+            const semanticValidation = validateSemantics(parsed.blocks, wordData.words);
+
+            if (semanticValidation.violations.length > 0) {
+                console.log('ElevenLabs Translator: Semantic violations found:');
+                semanticValidation.violations.forEach(v => {
+                    console.log(`  [${v.severity}] ${v.type}: ${v.message}`);
+                    if (v.suggestion) {
+                        console.log(`    Suggestion: ${v.suggestion}`);
+                    }
+                });
+            }
+
+            // Store as best result if structurally valid
+            if (!bestResult || semanticValidation.violations.length < (bestResult.semanticViolations || []).length) {
+                bestResult = parsed;
+                bestResult.semanticViolations = semanticValidation.violations;
+            }
+
+            // If semantic validation passes or doesn't require retry, return
+            if (!semanticValidation.shouldRetry) {
+                console.log('ElevenLabs Translator: Semantic validation passed');
+                return parsed;
+            }
+
+            // Semantic violations that should trigger retry
+            const errorMsg = semanticValidation.violations
+                .filter(v => v.severity === 'error')
+                .map(v => v.message)
+                .join('; ') || semanticValidation.violations[0].message;
+
+            throw new Error('Semantic: ' + errorMsg);
 
         } catch (error) {
             lastError = error;
@@ -363,13 +381,20 @@ async function handlePositionBasedPartitioning(wordData) {
                 throw error;
             }
 
-            if (attempt < MAX_RETRIES) {
-                const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
-                console.log(`ElevenLabs Translator: Retrying in ${delay}ms...`);
+            // Wait before retry using config delay
+            if (attempt < maxRetries) {
+                const delay = retryConfig.delay || 1000;
+                console.log(`ElevenLabs Translator: Retrying in ${delay}ms with higher temperature...`);
                 await sleep(delay);
             }
         }
     }
 
-    throw new Error(`Failed after ${MAX_RETRIES} attempts: ${lastError.message}`);
+    // If we have a structurally valid result but with semantic issues, return it with warning
+    if (bestResult) {
+        console.warn('ElevenLabs Translator: Returning best result despite semantic violations');
+        return bestResult;
+    }
+
+    throw new Error(`Failed after ${maxRetries} attempts: ${lastError.message}`);
 }
