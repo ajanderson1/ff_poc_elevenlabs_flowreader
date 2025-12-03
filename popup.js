@@ -42,12 +42,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   const voiceBannerEl = document.getElementById('voice-banner');
   const voiceRecommendationEl = document.getElementById('voice-recommendation');
   const recommendedVoicesListEl = document.getElementById('recommended-voices-list');
+  const popupContent = document.getElementById('popup-content');
 
   // Populate the tooltip with recommended voices
   populateRecommendedVoicesList();
 
   // Check current voice on the active tab
   checkCurrentVoice();
+
+  // Update disabled state based on toggle
+  function updateDisabledState(enabled) {
+    if (enabled) {
+      popupContent.classList.remove('disabled-overlay');
+    } else {
+      popupContent.classList.add('disabled-overlay');
+    }
+  }
 
   function populateRecommendedVoicesList() {
     recommendedVoicesListEl.innerHTML = '';
@@ -60,7 +70,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load saved settings
   chrome.storage.sync.get(['enabled', 'openaiApiKey', 'individualTranslations', 'partitioningEnabled', 'limitSingleParagraph', 'debugLogging'], (result) => {
-    toggle.checked = result.enabled !== false; // Default true
+    const isEnabled = result.enabled !== false; // Default true
+    toggle.checked = isEnabled;
+    updateDisabledState(isEnabled);
     individualTranslationsToggle.checked = result.individualTranslations !== false; // Default true
     partitioningToggle.checked = result.partitioningEnabled === true; // Default false (debug feature)
     limitSingleParagraphToggle.checked = result.limitSingleParagraph === true; // Default false (process all paragraphs)
@@ -73,6 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Save enabled state
   toggle.addEventListener('change', () => {
     chrome.storage.sync.set({ enabled: toggle.checked });
+    updateDisabledState(toggle.checked);
   });
 
   // Save individual translations state

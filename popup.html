@@ -307,6 +307,14 @@
     }
 
     /* Dark mode styles */
+    /* Disabled state when extension is toggled off */
+    .disabled-overlay {
+      opacity: 0.4;
+      pointer-events: none;
+      user-select: none;
+      transition: opacity 0.2s ease;
+    }
+
     @media (prefers-color-scheme: dark) {
       body {
         background-color: #1a1a1a;
@@ -435,70 +443,72 @@
       <span>Enable Extension</span>
     </div>
 
-    <div id="voice-info" class="voice-info-section not-reader">
-      <div class="voice-label">Current Voice:</div>
-      <div class="voice-name" id="voice-name">Not on ElevenReader</div>
-      <div class="voice-warning" id="voice-warning" style="display: none;"></div>
-      <div class="voice-banner" id="voice-banner" style="display: none;"></div>
-      <div class="voice-recommendation" id="voice-recommendation" style="display: none;">
-        <span class="voice-recommendation-text">Consider using a recommended voice for optimal pronunciation.</span>
-        <span class="info-icon">i
-          <div class="tooltip">
-            <div class="tooltip-title">Recommended voices:</div>
-            <ul class="tooltip-list" id="recommended-voices-list"></ul>
-          </div>
-        </span>
+    <div id="popup-content">
+      <div id="voice-info" class="voice-info-section not-reader">
+        <div class="voice-label">Current Voice:</div>
+        <div class="voice-name" id="voice-name">Not on ElevenReader</div>
+        <div class="voice-warning" id="voice-warning" style="display: none;"></div>
+        <div class="voice-banner" id="voice-banner" style="display: none;"></div>
+        <div class="voice-recommendation" id="voice-recommendation" style="display: none;">
+          <span class="voice-recommendation-text">Consider using a recommended voice for optimal pronunciation.</span>
+          <span class="info-icon">i
+            <div class="tooltip">
+              <div class="tooltip-title">Recommended voices:</div>
+              <ul class="tooltip-list" id="recommended-voices-list"></ul>
+            </div>
+          </span>
+        </div>
       </div>
-    </div>
 
-    <div class="api-key-section">
-      <label for="api-key">OpenAI API Key:</label>
-      <input type="password" id="api-key" placeholder="sk-..." />
-      <button id="save-key">Save Key</button>
-      <p id="status-msg"></p>
-    </div>
+      <div class="api-key-section">
+        <label for="api-key">OpenAI API Key:</label>
+        <input type="password" id="api-key" placeholder="sk-..." />
+        <button id="save-key">Save Key</button>
+        <p id="status-msg"></p>
+      </div>
 
-    <div class="section-header">Options</div>
+      <div class="section-header">Options</div>
 
-    <div class="control-group">
-      <label class="switch">
-        <input type="checkbox" id="individual-translations">
-        <span class="slider round"></span>
-      </label>
-      <span>Individual Translations</span>
-    </div>
+      <div class="control-group">
+        <label class="switch">
+          <input type="checkbox" id="individual-translations">
+          <span class="slider round"></span>
+        </label>
+        <span>Individual Translations</span>
+      </div>
 
-    <div class="section-header">Testing</div>
+      <div class="section-header">Testing</div>
 
-    <div class="control-group">
-      <label class="switch">
-        <input type="checkbox" id="partitioning-enabled">
-        <span class="slider round"></span>
-      </label>
-      <span>Show Meaning Blocks</span>
-    </div>
+      <div class="control-group">
+        <label class="switch">
+          <input type="checkbox" id="partitioning-enabled">
+          <span class="slider round"></span>
+        </label>
+        <span>Show Meaning Blocks</span>
+      </div>
 
-    <div class="control-group">
-      <label class="switch">
-        <input type="checkbox" id="limit-single-paragraph">
-        <span class="slider round"></span>
-      </label>
-      <span>Limit to Single Paragraph</span>
-    </div>
+      <div class="control-group">
+        <label class="switch">
+          <input type="checkbox" id="limit-single-paragraph">
+          <span class="slider round"></span>
+        </label>
+        <span>Limit to Single Paragraph</span>
+      </div>
 
-    <div class="control-group">
-      <label class="switch">
-        <input type="checkbox" id="debug-logging">
-        <span class="slider round"></span>
-      </label>
-      <span>Debug Logging</span>
-    </div>
+      <div class="control-group">
+        <label class="switch">
+          <input type="checkbox" id="debug-logging">
+          <span class="slider round"></span>
+        </label>
+        <span>Debug Logging</span>
+      </div>
 
-    <button id="clear-cache" class="clear-cache-btn">Clear Translation Cache</button>
-    <p id="cache-status-msg"></p>
+      <button id="clear-cache" class="clear-cache-btn">Clear Translation Cache</button>
+      <p id="cache-status-msg"></p>
 
-    <div class="footer">
-      <p>Press and hold "&#25991;" button or hold "/" key, on the reader page to see translations.</p>
+      <div class="footer">
+        <p>Press and hold "&#25991;" button or hold "/" key, on the reader page to see translations.</p>
+      </div>
     </div>
   </div>
   <script src="popup.js"></script>
