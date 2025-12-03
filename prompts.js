@@ -1,8 +1,8 @@
 /**
- * prompts.js - Decoupled system prompt, semantic validation, and retry configuration
- * for Meaning Blocks text segmentation.
+ * prompts.js - System prompt and semantic validation for Meaning Blocks text segmentation.
  *
  * This file is loaded via importScripts() in background.js (service worker).
+ * Retry configuration has been moved to config.js.
  */
 
 // =============================================================================
@@ -386,41 +386,10 @@ function validateSemantics(blocks, words) {
 
 
 // =============================================================================
-// RETRY CONFIGURATION
-// =============================================================================
-
-/**
- * Retry configuration with temperature escalation.
- * Each attempt uses a higher temperature to encourage variation.
- */
-const RETRY_CONFIG = [
-    { temperature: 0.2, delay: 0 },      // Attempt 1: Deterministic
-    { temperature: 0.4, delay: 1000 },   // Attempt 2: Slight variation
-    { temperature: 0.6, delay: 2000 }    // Attempt 3: More creative
-];
-
-/**
- * Get retry configuration for a given attempt number.
- * @param {number} attempt - Attempt number (1-indexed)
- * @returns {{ temperature: number, delay: number }}
- */
-function getRetryConfig(attempt) {
-    const index = Math.min(attempt - 1, RETRY_CONFIG.length - 1);
-    return RETRY_CONFIG[index];
-}
-
-/**
- * Get the maximum number of retries allowed.
- * @returns {number}
- */
-function getMaxRetries() {
-    return RETRY_CONFIG.length;
-}
-
-
-// =============================================================================
 // EXPORTS (for service worker via importScripts)
 // =============================================================================
 
 // These are exposed as globals when loaded via importScripts()
 // No export statement needed - variables are already in global scope
+//
+// Retry configuration (getRetryConfig, getMaxRetries) has been moved to config.js

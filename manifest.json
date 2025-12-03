@@ -34,6 +34,7 @@
         "https://elevenreader.io/*"
       ],
       "js": [
+        "config.js",
         "content.js"
       ],
       "css": [
@@ -41,10 +42,5 @@
       ]
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": ["config/recommended_voices.txt"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  "web_accessible_resources": []
 }

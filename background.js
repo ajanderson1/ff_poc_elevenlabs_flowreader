@@ -1,11 +1,8 @@
 // Background script for ElevenLabs Translator
 
-// Load prompt configuration, semantic validation, and retry strategy
+// Load configuration and prompt modules
+importScripts('config.js');
 importScripts('prompts.js');
-
-// --- Cache Configuration ---
-const CACHE_PREFIX = 'translation_cache_';
-const CACHE_VERSION = 1;
 
 /**
  * Generates a cache key for a given URL.
@@ -13,7 +10,7 @@ const CACHE_VERSION = 1;
  * @returns {string} Cache key
  */
 function getCacheKey(url) {
-    return CACHE_PREFIX + url;
+    return CONFIG.cache.prefix + url;
 }
 
 /**
@@ -26,7 +23,7 @@ async function getCachedTranslations(url) {
     const result = await chrome.storage.local.get([key]);
     const cached = result[key];
 
-    if (cached && cached.version === CACHE_VERSION) {
+    if (cached && cached.version === CONFIG.cache.version) {
         console.log('ElevenLabs Translator: Cache hit for', url);
         return cached;
     }
@@ -41,7 +38,7 @@ async function getCachedTranslations(url) {
 async function setCachedTranslations(url, paragraphs) {
     const key = getCacheKey(url);
     const cacheData = {
-        version: CACHE_VERSION,
+        version: CONFIG.cache.version,
         timestamp: Date.now(),
         paragraphs: paragraphs
     };
@@ -60,7 +57,7 @@ async function setCachedTranslations(url, paragraphs) {
  */
 async function clearAllCachedTranslations() {
     const allItems = await chrome.storage.local.get(null);
-    const cacheKeys = Object.keys(allItems).filter(key => key.startsWith(CACHE_PREFIX));
+    const cacheKeys = Object.keys(allItems).filter(key => key.startsWith(CONFIG.cache.prefix));
 
     if (cacheKeys.length > 0) {
         await chrome.storage.local.remove(cacheKeys);
@@ -69,8 +66,6 @@ async function clearAllCachedTranslations() {
 
     return cacheKeys.length;
 }
-
-// System prompt is now loaded from prompts.js via SYSTEM_PROMPT constant
 
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.action === 'PARTITION_TEXT') {
@@ -228,8 +223,6 @@ function validateBlockCoverage(blocks, words) {
     console.log('ElevenLabs Translator: Block coverage validation completed');
 }
 
-// Retry configuration is now loaded from prompts.js via getRetryConfig() and getMaxRetries()
-
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -274,19 +267,19 @@ async function handlePositionBasedPartitioning(wordData) {
 
         // Build request body with dynamic temperature from retry config
         var requestBody = {
-            model: 'gpt-4o-mini',
+            model: CONFIG.api.model,
             messages: [
                 { role: 'system', content: SYSTEM_PROMPT },
                 { role: 'user', content: userContent }
             ],
             temperature: retryConfig.temperature,
-            response_format: { type: 'json_object' }
+            response_format: CONFIG.api.responseFormat
         };
 
         try {
             console.log(`ElevenLabs Translator: API attempt ${attempt}/${maxRetries} (temperature: ${retryConfig.temperature})`);
 
-            var response = await fetch('https://api.openai.com/v1/chat/completions', {
+            var response = await fetch(CONFIG.api.endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -415,19 +408,23 @@ async function handlePositionBasedPartitioning(wordData) {
 
         } catch (error) {
             lastError = error;
-            console.warn(`ElevenLabs Translator: Attempt ${attempt} failed:`, error.message);
+            console.warn(`ElevenLabs Translator: [RETRY ${attempt}/${maxRetries}] LLM call failed:`, error.message);
 
             // Don't retry on non-retryable errors
             if (error.message.includes('Invalid API key') ||
                 error.message.includes('API Key not found')) {
+                console.error(`ElevenLabs Translator: [RETRY ${attempt}/${maxRetries}] Non-retryable error, aborting`);
                 throw error;
             }
 
             // Wait before retry using config delay
             if (attempt < maxRetries) {
                 const delay = retryConfig.delay || 1000;
-                console.log(`ElevenLabs Translator: Retrying in ${delay}ms with higher temperature...`);
+                const nextTemp = getRetryConfig(attempt + 1).temperature;
+                console.log(`ElevenLabs Translator: [RETRY ${attempt}/${maxRetries}] Waiting ${delay}ms before retry ${attempt + 1} (temperature: ${nextTemp})`);
                 await sleep(delay);
+            } else {
+                console.error(`ElevenLabs Translator: [RETRY ${attempt}/${maxRetries}] All retries exhausted`);
             }
         }
     }

@@ -1,26 +1,25 @@
 // --- Logging Utility ---
 // Filter in DevTools console with: /^\[ELT\]/
-const LOG_PREFIX = '[ELT]';
 const Logger = {
     _enabled: false, // Controlled by Debug Logging toggle in popup
     _verboseErrors: false, // Set true to see full stack traces
 
     log(...args) {
-        if (this._enabled) console.log(LOG_PREFIX, ...args);
+        if (this._enabled) console.log(CONFIG.logging.prefix, ...args);
     },
     debug(...args) {
-        if (this._enabled && CONFIG.debugClauses) console.log(LOG_PREFIX, '[DEBUG]', ...args);
+        if (this._enabled && RUNTIME.debugClauses) console.log(CONFIG.logging.prefix, '[DEBUG]', ...args);
     },
     warn(...args) {
-        if (this._enabled) console.warn(LOG_PREFIX, ...args);
+        if (this._enabled) console.warn(CONFIG.logging.prefix, ...args);
     },
     error(msg, err) {
         if (this._enabled) {
             if (this._verboseErrors) {
-                console.error(LOG_PREFIX, msg, err);
+                console.error(CONFIG.logging.prefix, msg, err);
             } else {
                 // Compact error: just message, no stack trace
-                console.error(LOG_PREFIX, msg, err?.message || err);
+                console.error(CONFIG.logging.prefix, msg, err?.message || err);
             }
         }
     },
@@ -31,7 +30,7 @@ const Logger = {
      * @param {object} responseData - The LLM response with {blocks: [...]}
      */
     trainingOutput(wordMap, responseData) {
-        if (!this._enabled || !CONFIG.debugClauses) return;
+        if (!this._enabled || !RUNTIME.debugClauses) return;
 
         const fullText = wordMap.words.map(w => w.text).join(' ');
         const blocks = responseData.blocks || [];
@@ -67,10 +66,10 @@ const Logger = {
         lines.push(separator);
 
         // Output pipe format as main log line
-        console.log(`${LOG_PREFIX} [TRAINING] ${partitioned}`);
+        console.log(`${CONFIG.logging.prefix} [TRAINING] ${partitioned}`);
 
         // Output detailed format in collapsed group
-        console.groupCollapsed(`${LOG_PREFIX} [TRAINING DETAILS]`);
+        console.groupCollapsed(`${CONFIG.logging.prefix} [TRAINING DETAILS]`);
         console.log(lines.join('\n'));
         console.groupEnd();
     }
@@ -88,8 +87,8 @@ Logger.log("Content script loaded.");
  * @returns {number} Cost in USD
  */
 function calculateOpenAICost(promptTokens, completionTokens) {
-    const inputCost = (promptTokens / 1_000_000) * OPENAI_PRICING.inputPerMillion;
-    const outputCost = (completionTokens / 1_000_000) * OPENAI_PRICING.outputPerMillion;
+    const inputCost = (promptTokens / 1_000_000) * CONFIG.costEstimation.openai.inputPerMillion;
+    const outputCost = (completionTokens / 1_000_000) * CONFIG.costEstimation.openai.outputPerMillion;
     return inputCost + outputCost;
 }
 
@@ -100,7 +99,7 @@ function calculateOpenAICost(promptTokens, completionTokens) {
  */
 function calculateElevenLabsMinutes(text) {
     const charCount = text.length;
-    return charCount / ELEVENLABS_CHARS_PER_MINUTE;
+    return charCount / CONFIG.costEstimation.elevenLabsCharsPerMinute;
 }
 
 /**
@@ -133,7 +132,7 @@ function logParagraphCost(paragraphIndex, originalText, promptTokens, completion
 
     // Format and log
     console.log(
-        `${LOG_PREFIX} 📊 Paragraph ${paragraphIndex} Cost:\n` +
+        `${CONFIG.logging.prefix} 📊 Paragraph ${paragraphIndex} Cost:\n` +
         `      → ElevenLabs Reader: ${elevenLabsMinutes.toFixed(1)} min (of your subscription)\n` +
         `      → OpenAI API: $${openAICost.toFixed(5)} (${formatNumber(promptTokens)} in / ${formatNumber(completionTokens)} out tokens)`
     );
@@ -147,7 +146,7 @@ function logTotalCostSummary() {
     if (costTracker.paragraphCount === 0) return;
 
     console.log(
-        `${LOG_PREFIX} 📊 TOTAL COST SUMMARY:\n` +
+        `${CONFIG.logging.prefix} 📊 TOTAL COST SUMMARY:\n` +
         `      → ElevenLabs Reader: ${costTracker.totalElevenLabsMinutes.toFixed(1)} min (of your subscription)\n` +
         `      → OpenAI API: $${costTracker.totalOpenAICost.toFixed(5)} (${formatNumber(costTracker.totalPromptTokens)} in / ${formatNumber(costTracker.totalCompletionTokens)} out tokens)`
     );
@@ -203,17 +202,14 @@ async function setCachedTranslations(paragraphs) {
     });
 }
 
-// --- Configuration ---
-const CONFIG = {
-    enabled: true,
-    debugClauses: true, // For debug logging
-    currentSegmentationType: 'Clause', // Default segmentation type
-    individualTranslations: true, // Hover to reveal individual block translations
-    limitSingleParagraph: false // When true, only process the first paragraph (saves API calls during testing)
+// --- Runtime State (initialized from CONFIG.defaults) ---
+const RUNTIME = {
+    enabled: CONFIG.defaults.enabled,
+    debugClauses: CONFIG.defaults.debugClauses,
+    currentSegmentationType: CONFIG.defaults.currentSegmentationType,
+    individualTranslations: CONFIG.defaults.individualTranslations,
+    limitSingleParagraph: CONFIG.defaults.limitSingleParagraph
 };
-
-// Selector for all translatable text elements (paragraphs and headers)
-const TRANSLATABLE_SELECTOR = 'p, h1, h2, h3, h4, h5, h6';
 
 
 // --- State ---
@@ -239,15 +235,6 @@ const costTracker = {
     totalCompletionTokens: 0,
     paragraphCount: 0
 };
-
-// --- Cost Calculation Constants ---
-// GPT-4o-mini pricing (per million tokens)
-const OPENAI_PRICING = {
-    inputPerMillion: 0.15,   // $0.15 per 1M input tokens
-    outputPerMillion: 0.60   // $0.60 per 1M output tokens
-};
-// ElevenLabs Reader: ~833 characters per minute
-const ELEVENLABS_CHARS_PER_MINUTE = 833;
 
 // --- Text Extraction & Tokenization ---
 
@@ -570,7 +557,7 @@ function clearOverlays(p) {
  * @param {object} overlayData - The overlay data from activeOverlays
  */
 function showIndividualTranslation(overlayData) {
-    if (!CONFIG.individualTranslations) return;
+    if (!RUNTIME.individualTranslations) return;
     if (translationsVisible) return; // Don't interfere when all translations are shown
 
     // Show this overlay and underline
@@ -585,7 +572,7 @@ function showIndividualTranslation(overlayData) {
  * @param {object} overlayData - The overlay data from activeOverlays
  */
 function hideIndividualTranslation(overlayData) {
-    if (!CONFIG.individualTranslations) return;
+    if (!RUNTIME.individualTranslations) return;
     if (translationsVisible) return; // Don't interfere when all translations are shown
 
     // Hide this overlay and underline
@@ -888,7 +875,7 @@ function getBlocks(response) {
 async function reRenderAll() {
     Logger.log("reRenderAll called");
 
-    const paragraphs = document.querySelectorAll(`#preview-content ${TRANSLATABLE_SELECTOR}`);
+    const paragraphs = document.querySelectorAll(`#preview-content ${CONFIG.selectors.translatable}`);
     Logger.log("Found translatable elements:", paragraphs.length);
 
     paragraphs.forEach((p, idx) => {
@@ -1000,12 +987,12 @@ async function processParagraphs() {
     const contentDiv = document.getElementById('preview-content');
     if (!contentDiv) return;
 
-    const paragraphs = Array.from(contentDiv.querySelectorAll(TRANSLATABLE_SELECTOR));
+    const paragraphs = Array.from(contentDiv.querySelectorAll(CONFIG.selectors.translatable));
     let unprocessed = paragraphs
         .filter(p => !p._fullResponse && p.textContent.trim().length > 0);
 
     // Apply single paragraph limit if enabled (debug feature to save API calls)
-    if (CONFIG.limitSingleParagraph) {
+    if (RUNTIME.limitSingleParagraph) {
         unprocessed = unprocessed.slice(0, 1);
     }
 
@@ -1191,8 +1178,8 @@ function updateHighlightingVisibility(partitioningEnabled) {
 function init() {
     chrome.storage.sync.get(['enabled', 'partitioningEnabled', 'individualTranslations', 'limitSingleParagraph', 'debugLogging'], (result) => {
         if (result.enabled === false) return;
-        CONFIG.individualTranslations = result.individualTranslations !== false; // Default true
-        CONFIG.limitSingleParagraph = result.limitSingleParagraph === true; // Default false (process all paragraphs)
+        RUNTIME.individualTranslations = result.individualTranslations !== false; // Default true
+        RUNTIME.limitSingleParagraph = result.limitSingleParagraph === true; // Default false (process all paragraphs)
         Logger._enabled = result.debugLogging === true; // Default false
 
         const contentDiv = document.getElementById('preview-content');
@@ -1227,8 +1214,6 @@ if (document.readyState === 'loading') {
 }
 
 // --- Keyboard Navigation ---
-
-const DOUBLE_PRESS_THRESHOLD = 300; // ms
 
 // Navigation state for accumulated rapid presses
 // Tracks: last press time, accumulated press count, base block index at first press
@@ -1530,7 +1515,7 @@ function navigateMeaningBlocks(direction, state) {
     }
 
     const now = Date.now();
-    const isRapidPress = (now - state.lastTime) < DOUBLE_PRESS_THRESHOLD;
+    const isRapidPress = (now - state.lastTime) < CONFIG.timing.doublePressThreshold;
 
     // Cancel any pending seek - we're updating the target
     if (state.seekTimer) {
@@ -1578,7 +1563,7 @@ function navigateMeaningBlocks(direction, state) {
             seekToSpan(boundaries[targetIndex].firstSpan);
         }
         state.seekTimer = null;
-    }, DOUBLE_PRESS_THRESHOLD);
+    }, CONFIG.timing.doublePressThreshold);
 }
 
 /**
@@ -1587,7 +1572,7 @@ function navigateMeaningBlocks(direction, state) {
  */
 function getSentenceBoundaries() {
     const boundaries = [];
-    const paragraphs = document.querySelectorAll(`#preview-content ${TRANSLATABLE_SELECTOR}`);
+    const paragraphs = document.querySelectorAll(`#preview-content ${CONFIG.selectors.translatable}`);
 
     paragraphs.forEach((p, pIdx) => {
         const wordMap = extractWordMap(p, pIdx);
@@ -1635,7 +1620,7 @@ function navigateSentences(direction, state) {
     }
 
     const now = Date.now();
-    const isRapidPress = (now - state.lastTime) < DOUBLE_PRESS_THRESHOLD;
+    const isRapidPress = (now - state.lastTime) < CONFIG.timing.doublePressThreshold;
 
     // Cancel any pending seek - we're updating the target
     if (state.seekTimer) {
@@ -1681,7 +1666,7 @@ function navigateSentences(direction, state) {
             seekToSpan(boundaries[targetIndex].firstSpan);
         }
         state.seekTimer = null;
-    }, DOUBLE_PRESS_THRESHOLD);
+    }, CONFIG.timing.doublePressThreshold);
 }
 
 // --- Event Handler Functions (named for cleanup) ---
@@ -1814,7 +1799,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
             }
             if (changes.individualTranslations) {
                 Logger.log("individualTranslations changed:", changes.individualTranslations.newValue);
-                CONFIG.individualTranslations = changes.individualTranslations.newValue !== false;
+                RUNTIME.individualTranslations = changes.individualTranslations.newValue !== false;
             }
         }
     }
@@ -1825,7 +1810,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 let currentlyHoveredBlock = null;
 
 function handleMousemove(e) {
-    if (!CONFIG.individualTranslations) return;
+    if (!RUNTIME.individualTranslations) return;
     if (translationsVisible) return; // Don't interfere when all translations shown
 
     const mouseX = e.clientX;
@@ -1952,7 +1937,7 @@ function removeAllUIElements() {
  * Clears paragraph translation data and state
  */
 function clearParagraphData() {
-    const paragraphs = document.querySelectorAll(`#preview-content ${TRANSLATABLE_SELECTOR}`);
+    const paragraphs = document.querySelectorAll(`#preview-content ${CONFIG.selectors.translatable}`);
     paragraphs.forEach(p => {
         if (p._translationOverlays) {
             p._translationOverlays.forEach(el => el.remove());
@@ -2027,8 +2012,8 @@ function reinitialize() {
 
     // Reload settings
     chrome.storage.sync.get(['partitioningEnabled', 'individualTranslations', 'limitSingleParagraph', 'debugLogging'], (result) => {
-        CONFIG.individualTranslations = result.individualTranslations !== false;
-        CONFIG.limitSingleParagraph = result.limitSingleParagraph === true;
+        RUNTIME.individualTranslations = result.individualTranslations !== false;
+        RUNTIME.limitSingleParagraph = result.limitSingleParagraph === true;
         Logger._enabled = result.debugLogging === true;
 
         // Apply highlighting visibility
