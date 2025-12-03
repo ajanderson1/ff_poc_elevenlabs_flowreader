@@ -208,20 +208,13 @@ const CONFIG = {
     enabled: true,
     debugClauses: true, // For debug logging
     currentSegmentationType: 'Clause', // Default segmentation type
-    individualTranslations: true, // Default true - hover to reveal individual translations
+    individualTranslations: true, // Hover to reveal individual block translations
     limitSingleParagraph: false // When true, only process the first paragraph (saves API calls during testing)
 };
 
 // Selector for all translatable text elements (paragraphs and headers)
 const TRANSLATABLE_SELECTOR = 'p, h1, h2, h3, h4, h5, h6';
 
-// Removed multi-type segmentation constants - now using single Meaning Blocks approach
-
-// Single color for all meaning blocks - Light Blue
-const MEANING_BLOCK_COLOR = {
-    bg: 'rgba(66, 165, 245, 0.3)',
-    border: 'rgba(66, 165, 245, 0.9)'
-};
 
 // --- State ---
 let isProcessing = false;
@@ -547,40 +540,17 @@ function alignSegmentsToTokens(tokens, segments) {
 
 // --- DOM Injection & Rendering ---
 
-/**
- * Unwraps a meaning block wrapper, moving its children back to the parent.
- * @param {HTMLSpanElement} wrapper - The wrapper element to unwrap
- */
-function unwrapMeaningBlock(wrapper) {
-    if (!wrapper || !wrapper.parentNode) return;
-
-    const parent = wrapper.parentNode;
-    // Move all children back to parent before the wrapper
-    while (wrapper.firstChild) {
-        parent.insertBefore(wrapper.firstChild, wrapper);
-    }
-    // Remove the now-empty wrapper
-    wrapper.remove();
-}
-
 function clearOverlays(p) {
     if (p._translationOverlays) {
-        p._translationOverlays.forEach(el => {
-            // Unwrap meaning block wrappers (restore original DOM)
-            if (el.classList && el.classList.contains('elt-meaning-block')) {
-                unwrapMeaningBlock(el);
-            } else {
-                el.remove();
-            }
-        });
+        p._translationOverlays.forEach(el => el.remove());
         p._translationOverlays = [];
     }
     // Also clear from global activeOverlays
     activeOverlays = activeOverlays.filter(item => {
         if (p.contains(item.range.startContainer)) {
             if (item.overlayElement) item.overlayElement.remove();
-            if (item.debugElement) item.debugElement.remove();
-            if (item.wrapper) unwrapMeaningBlock(item.wrapper);
+            if (item.underlineElement) item.underlineElement.remove();
+            if (item.hoverZoneElement) item.hoverZoneElement.remove();
             return false;
         }
         return true;
@@ -595,12 +565,10 @@ function showIndividualTranslation(overlayData) {
     if (!CONFIG.individualTranslations) return;
     if (translationsVisible) return; // Don't interfere when all translations are shown
 
-    // Show this overlay
+    // Show this overlay and underline
     overlayData.overlayElement.classList.add('elt-individual-visible');
-
-    // Add hover class to wrapper for background/underline visibility
-    if (overlayData.wrapper) {
-        overlayData.wrapper.classList.add('elt-hovered');
+    if (overlayData.underlineElement) {
+        overlayData.underlineElement.classList.add('elt-individual-visible');
     }
 }
 
@@ -612,50 +580,10 @@ function hideIndividualTranslation(overlayData) {
     if (!CONFIG.individualTranslations) return;
     if (translationsVisible) return; // Don't interfere when all translations are shown
 
-    // Hide this overlay
+    // Hide this overlay and underline
     overlayData.overlayElement.classList.remove('elt-individual-visible');
-
-    // Remove hover class from wrapper
-    if (overlayData.wrapper) {
-        overlayData.wrapper.classList.remove('elt-hovered');
-    }
-}
-
-/**
- * Wraps meaning block spans in an inline container element.
- * This ensures whitespace between words is part of the hover area.
- * Applies consistent background color for visual highlighting.
- * @param {HTMLSpanElement[]} spans - The spans that make up this meaning block
- * @returns {HTMLSpanElement|null} The wrapper element, or null if wrapping failed
- */
-function wrapMeaningBlockSpans(spans) {
-    if (!spans || spans.length === 0) return null;
-
-    const wrapper = document.createElement('span');
-    wrapper.className = 'elt-meaning-block';
-
-    // Apply consistent background color via CSS custom properties
-    wrapper.setAttribute('data-bg-color', 'true');
-    wrapper.style.setProperty('--block-bg', MEANING_BLOCK_COLOR.bg);
-    wrapper.style.setProperty('--block-border', MEANING_BLOCK_COLOR.border);
-    // Darker border for dark mode hover
-    wrapper.style.setProperty('--block-border-dark', MEANING_BLOCK_COLOR.border.replace('0.9', '1'));
-
-    try {
-        // Use Range to capture spans AND whitespace between them
-        const range = document.createRange();
-        range.setStartBefore(spans[0]);
-        range.setEndAfter(spans[spans.length - 1]);
-
-        // Extract content (spans + whitespace), wrap it, insert back
-        const fragment = range.extractContents();
-        wrapper.appendChild(fragment);
-        range.insertNode(wrapper);
-
-        return wrapper;
-    } catch (e) {
-        Logger.error('Failed to wrap meaning block spans:', e);
-        return null;
+    if (overlayData.underlineElement) {
+        overlayData.underlineElement.classList.remove('elt-individual-visible');
     }
 }
 
@@ -668,53 +596,46 @@ function renderSegmentations(p, alignedSegments) {
         const { segment, spans } = item;
         Logger.log(`Creating overlay ${index}:`, segment.type, segment.translation?.substring(0, 30));
 
-        // 1. Wrap meaning block spans in inline container (includes whitespace)
-        const wrapper = wrapMeaningBlockSpans(spans);
-        if (wrapper) {
-            p._translationOverlays.push(wrapper);
-        }
-
-        // 2. Create new Range from wrapper for positioning (old range is invalidated)
+        // Create Range from spans for positioning
         const range = document.createRange();
-        if (wrapper) {
-            range.selectNodeContents(wrapper);
-        } else if (spans && spans.length > 0) {
+        if (spans && spans.length > 0) {
             range.setStartBefore(spans[0]);
             range.setEndAfter(spans[spans.length - 1]);
         }
 
-        // 3. Translation Overlay Container (multi-line support)
-        // Append to #preview-content so overlays scroll with content and go behind fixed nav bar
+        // Append to #preview-content so overlays scroll with content
         const contentDiv = document.getElementById('preview-content');
+
+        // Hover zone container for this meaning block (for continuous hover area)
+        const hoverZoneContainer = document.createElement('div');
+        hoverZoneContainer.className = 'elt-hover-zone-container';
+        (contentDiv || document.body).appendChild(hoverZoneContainer);
+        p._translationOverlays.push(hoverZoneContainer);
+
+        // Underline container for this meaning block
+        const underlineContainer = document.createElement('div');
+        underlineContainer.className = 'elt-underline-container';
+        (contentDiv || document.body).appendChild(underlineContainer);
+        p._translationOverlays.push(underlineContainer);
+
+        // Translation Overlay Container (multi-line support)
         const overlayContainer = document.createElement('div');
         overlayContainer.className = 'translation-overlay-container';
         if (translationsVisible) overlayContainer.classList.add('translation-visible');
         (contentDiv || document.body).appendChild(overlayContainer);
         p._translationOverlays.push(overlayContainer);
 
-        // 4. Segment Highlight Container (always created for visual feedback)
-        const debugEl = document.createElement('div');
-        debugEl.className = 'clause-debug-container';
-        (contentDiv || document.body).appendChild(debugEl);
-        p._translationOverlays.push(debugEl);
-
         const overlayData = {
             range,
             overlayElement: overlayContainer,
-            debugElement: debugEl,
-            wrapper: wrapper,  // Store wrapper for cleanup and hover
+            underlineElement: underlineContainer,
+            hoverZoneElement: hoverZoneContainer,
             type: segment.type,
             translation: segment.translation,
             spans: spans || []
         };
 
         activeOverlays.push(overlayData);
-
-        // 5. Attach hover listeners to wrapper (covers entire block including whitespace)
-        if (wrapper) {
-            wrapper.addEventListener('mouseenter', () => showIndividualTranslation(overlayData));
-            wrapper.addEventListener('mouseleave', () => hideIndividualTranslation(overlayData));
-        }
     });
 
     requestAnimationFrame(updateOverlayPositions);
@@ -828,67 +749,90 @@ function updateOverlayPositions() {
         if (!rects.length) return;
 
         const overlay = item.overlayElement;
+        const underlineEl = item.underlineElement;
+        const hoverZoneEl = item.hoverZoneElement;
         const translation = item.translation || '';
 
-        // Merge rectangles by line (same logic used for debug highlighting)
+        // Merge rectangles by line (same logic used for underlines)
         const mergedLines = mergeRectsPerLine(rects);
 
-        // Clear existing line elements and recreate
+        // Clear existing elements and recreate
         overlay.innerHTML = '';
+        if (underlineEl) underlineEl.innerHTML = '';
+        if (hoverZoneEl) hoverZoneEl.innerHTML = '';
 
         if (mergedLines.length === 0) return;
 
         // Split translation to match line count
         const translationLines = splitTranslationByLines(translation, mergedLines);
 
-        // Create positioned overlay for each line
+        // Create positioned overlay, underline, and hover zone for each line
         mergedLines.forEach((line, lineIdx) => {
+            // Calculate positions relative to container
+            let lineTop, lineLeft, centerX;
+            if (containerRect) {
+                lineTop = line.top - containerRect.top;
+                lineLeft = line.left - containerRect.left;
+                centerX = lineLeft + (line.width / 2);
+            } else {
+                lineTop = line.top + window.scrollY;
+                lineLeft = line.left + window.scrollX;
+                centerX = lineLeft + (line.width / 2);
+            }
+
+            // --- HOVER ZONE (covers entire meaning block line for continuous hover) ---
+            if (hoverZoneEl) {
+                const hoverZone = document.createElement('div');
+                hoverZone.className = 'elt-hover-zone';
+                // Position to cover the text area with slight padding
+                hoverZone.style.top = `${lineTop - 2}px`;
+                hoverZone.style.left = `${lineLeft - 2}px`;
+                hoverZone.style.width = `${line.width + 4}px`;
+                hoverZone.style.height = `${line.height + 4}px`;
+
+                // Attach hover events to this zone
+                hoverZone.addEventListener('mouseenter', () => showIndividualTranslation(item));
+                hoverZone.addEventListener('mouseleave', () => hideIndividualTranslation(item));
+
+                // Forward clicks to the text below for audio seeking
+                hoverZone.addEventListener('click', (e) => {
+                    hoverZone.style.pointerEvents = 'none';
+                    const elementBelow = document.elementFromPoint(e.clientX, e.clientY);
+                    hoverZone.style.pointerEvents = 'auto';
+                    if (elementBelow && elementBelow !== hoverZone) {
+                        elementBelow.click();
+                    }
+                });
+
+                hoverZoneEl.appendChild(hoverZone);
+            }
+
+            // --- UNDERLINE (positioned at bottom of text) ---
+            if (underlineEl) {
+                const underline = document.createElement('div');
+                underline.className = 'elt-underline';
+                // Position underline at the baseline of text
+                underline.style.top = `${lineTop + line.height - 2}px`;
+                underline.style.left = `${lineLeft}px`;
+                underline.style.width = `${line.width}px`;
+                underline.style.height = '3px';
+                underlineEl.appendChild(underline);
+            }
+
+            // --- TRANSLATION PILL (positioned below text) ---
             const lineOverlay = document.createElement('div');
             lineOverlay.className = 'translation-line';
             lineOverlay.textContent = translationLines[lineIdx] || '';
 
-            // Position: centered above the original line, relative to #preview-content
-            const estimatedHeight = 20;
-            let top, centerX;
-            if (containerRect) {
-                // Relative to #preview-content container
-                top = line.top - containerRect.top - estimatedHeight - 8;
-                centerX = line.left - containerRect.left + (line.width / 2);
-            } else {
-                // Fallback to document-relative positioning
-                top = line.top + window.scrollY - estimatedHeight - 8;
-                centerX = line.left + window.scrollX + (line.width / 2);
-            }
+            // Position: centered below the original line, tight to underline
+            const gapBelowText = 1; // Minimal gap between underline and translation pill
+            const top = lineTop + line.height + gapBelowText;
 
             lineOverlay.style.top = `${top}px`;
             lineOverlay.style.left = `${centerX}px`;
 
             overlay.appendChild(lineOverlay);
         });
-
-        // Debug highlighting (unchanged - already per-line)
-        if (item.debugElement) {
-            item.debugElement.innerHTML = '';
-
-            for (const line of mergedLines) {
-                const box = document.createElement('div');
-                box.className = 'clause-debug-highlight';
-                box.setAttribute('data-type', item.type || CONFIG.currentSegmentationType);
-                let boxTop, boxLeft;
-                if (containerRect) {
-                    boxTop = line.top - containerRect.top;
-                    boxLeft = line.left - containerRect.left;
-                } else {
-                    boxTop = line.top + window.scrollY;
-                    boxLeft = line.left + window.scrollX;
-                }
-                box.style.top = `${boxTop}px`;
-                box.style.left = `${boxLeft}px`;
-                box.style.width = `${line.width}px`;
-                box.style.height = `${line.height}px`;
-                item.debugElement.appendChild(box);
-            }
-        }
     });
 }
 
@@ -1227,13 +1171,6 @@ function enableToggleButtonIfReady() {
     }
 }
 
-function applyDoubleSpacing(contentDiv) {
-    // Apply double-spacing to all translatable elements (paragraphs and headers)
-    const elements = contentDiv.querySelectorAll(TRANSLATABLE_SELECTOR);
-    elements.forEach(el => {
-        el.style.lineHeight = '5';
-    });
-}
 
 // Helper to check if partitioning is enabled
 function isPartitioningEnabled(partitioningEnabled) {
@@ -1274,18 +1211,9 @@ function init() {
         // Apply highlighting visibility based on whether partitioning is enabled
         updateHighlightingVisibility(result.partitioningEnabled);
 
-        // Apply double-spacing immediately when content is found
-        applyDoubleSpacing(contentDiv);
-
         injectProcessingBanner();
         injectToggleButton();
 
-        // Observer - only for styling, NOT for triggering LLM calls
-        const observer = new MutationObserver((mutations) => {
-            // Apply double-spacing to any newly added paragraphs
-            applyDoubleSpacing(contentDiv);
-        });
-        observer.observe(contentDiv, { childList: true, subtree: true });
 
         // Initial process
         processParagraphs();

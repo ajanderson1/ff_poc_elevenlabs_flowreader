@@ -1,55 +1,9 @@
-/* Increase line height to make room for translations above each line */
-/* Remove ElevenLabs paragraph background highlighting */
-
 /* Make #preview-content a stacking context so overlays are contained within it
    and render below the fixed nav bar when scrolling */
 #preview-content {
     position: relative;
     isolation: isolate;  /* Creates stacking context without changing z-index */
 }
-
-#preview-content p {
-    line-height: 5 !important;
-    position: relative;
-    background-color: transparent !important;
-    background: transparent !important;
-}
-
-/* Hide ElevenLabs active sentence highlighting */
-#preview-content p.active-sentence {
-    background-color: transparent !important;
-    background: transparent !important;
-}
-
-/* Hide ElevenLabs highlight-box overlays */
-#preview-content .highlight-box {
-    display: none !important;
-}
-
-/* Container for the translation */
-.translation-overlay {
-    position: absolute;
-    /* Top/Left set via JS */
-    font-size: 0.75em;
-    color: #555;
-    background-color: rgba(240, 240, 240, 0.95);
-    padding: 2px 6px;
-    border-radius: 4px;
-    pointer-events: none;
-    /* Let clicks pass through to text */
-    white-space: nowrap;
-    z-index: 100;
-    /* Lower z-index to render below fixed nav bar */
-    display: none;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-    border: 1px solid #e0e0e0;
-}
-
-.translation-visible {
-    display: block !important;
-}
-
-
 
 /* Floating Toggle Button */
 #elevenlabs-translator-toggle {
@@ -61,7 +15,6 @@
     height: 60px;
     border-radius: 50%;
     background-color: #4285F4;
-    /* Google Blue-ish */
     color: white;
     border: none;
     cursor: pointer;
@@ -105,66 +58,12 @@
     transform: scale(0.95);
 }
 
-/* Debug Highlighting */
-.clause-debug-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    pointer-events: none;
-    z-index: 99;
+#elevenlabs-translator-toggle:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none;
 }
-
-.clause-debug-highlight {
-    position: absolute;
-    /* Background color set dynamically via JS based on segment type */
-    pointer-events: none;
-    box-sizing: border-box;
-    border-radius: 3px;
-    /* Small gap/margin effect via slight size reduction */
-    margin-left: 1px;
-    margin-right: 1px;
-    /* Offset underline down from text baseline */
-    margin-top: 5px;
-}
-
-/* Segment type specific colors - applied via data attribute */
-/* Fine dotted underlines, lighter and semi-transparent */
-.clause-debug-highlight[data-type="Section"] {
-    border-bottom: 1.5px dotted rgba(156, 39, 176, 0.6);
-}
-.clause-debug-highlight[data-type="Paragraph"] {
-    border-bottom: 1.5px dotted rgba(63, 81, 181, 0.6);
-}
-.clause-debug-highlight[data-type="Sentence"] {
-    border-bottom: 1.5px dotted rgba(33, 150, 243, 0.6);
-}
-.clause-debug-highlight[data-type="Clause"] {
-    border-bottom: 1.5px dotted rgba(0, 188, 212, 0.6);
-}
-.clause-debug-highlight[data-type="Phrase"] {
-    border-bottom: 1.5px dotted rgba(76, 175, 80, 0.6);
-}
-.clause-debug-highlight[data-type="Collocation"] {
-    border-bottom: 1.5px dotted rgba(255, 193, 7, 0.6);
-}
-.clause-debug-highlight[data-type="Verbs"] {
-    border-bottom: 1.5px dotted rgba(255, 87, 34, 0.6);
-}
-.clause-debug-highlight[data-type="Proper Nouns"] {
-    border-bottom: 1.5px dotted rgba(233, 30, 99, 0.6);
-}
-.clause-debug-highlight[data-type="Word"] {
-    border-bottom: 1.5px dotted rgba(158, 158, 158, 0.6);
-}
-
-/* Hide old debug highlighting by default - now using .elt-meaning-block backgrounds instead */
-.clause-debug-container {
-    display: none;
-}
-
-/* Note: The old debug underlines are no longer shown by default.
-   Background highlighting is handled via .elt-meaning-block wrappers with CSS custom properties.
-   The debug container is still created for potential future use but hidden. */
 
 /* Processing Banner */
 #elevenlabs-processing-banner {
@@ -191,7 +90,6 @@
     opacity: 1;
 }
 
-/* Spinner for banner */
 .elevenlabs-spinner {
     width: 16px;
     height: 16px;
@@ -207,25 +105,42 @@
     }
 }
 
-/* Disabled Button State */
-#elevenlabs-translator-toggle:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
-    transform: none !important;
-    box-shadow: none;
+/* ============================================
+   MEANING BLOCK UNDERLINES
+   ============================================ */
+
+/* Container for underline elements */
+.elt-underline-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 50;
 }
 
-/* Centered Translation Overlay (legacy - kept for backwards compatibility) */
-.translation-overlay {
-    /* Override previous styles if needed, but keeping base styles */
-    transform: translateX(-50%);
-    /* Center horizontally relative to left position */
-    text-align: center;
-    white-space: normal;
-    /* Allow wrapping */
-    max-width: 300px;
-    /* Prevent too wide overlays */
+/* Individual underline element - light blue/cyan color */
+.elt-underline {
+    position: absolute;
+    pointer-events: none;
+    box-sizing: border-box;
+    /* Soft cyan/light blue underline to match the reference */
+    border-bottom: 2.5px solid rgba(135, 206, 235, 0.85);
+    border-radius: 1px;
 }
+
+/* Hide underlines by default, show when translations visible */
+.elt-underline-container {
+    display: none;
+}
+
+body.elt-translations-visible .elt-underline-container,
+body.elt-show-highlighting .elt-underline-container {
+    display: block;
+}
+
+/* ============================================
+   TRANSLATION OVERLAYS - WHITE ON BLACK PILLS
+   ============================================ */
 
 /* Multi-line translation overlay container */
 .translation-overlay-container {
@@ -241,80 +156,71 @@
     display: block !important;
 }
 
-/* Individual translation line - positioned absolutely within container */
-.translation-line {
-    position: absolute;
-    font-size: 0.7em;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    pointer-events: none;
-    white-space: nowrap;
-    text-align: center;
-    transform: translateX(-50%);
-    max-width: 90vw;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    /* Light mode default */
-    color: #6366f1;  /* Indigo - distinct from black text */
-}
-
-/* Dark mode support via media query */
-@media (prefers-color-scheme: dark) {
-    .translation-line {
-        color: #a5b4fc;  /* Lighter indigo for dark backgrounds */
-    }
-}
-
-/* Dark mode support via body class (for sites that toggle manually) */
-body.dark .translation-line,
-body.dark-mode .translation-line,
-body[data-theme="dark"] .translation-line,
-html.dark .translation-line,
-html[data-theme="dark"] .translation-line {
-    color: #a5b4fc;
-}
-
-/* Light mode explicit override */
-body.light .translation-line,
-body.light-mode .translation-line,
-body[data-theme="light"] .translation-line,
-html.light .translation-line,
-html[data-theme="light"] .translation-line {
-    color: #6366f1;
-}
-
-/* Individual hover-to-reveal styles */
-
-/* Show individual translation overlay when hovered */
+/* Individual hover-to-reveal: show overlay when hovered */
 .translation-overlay-container.elt-individual-visible {
     display: block !important;
 }
 
-/* Cursor pointer on hoverable meaning blocks */
-#preview-content span[c] {
-    cursor: pointer;
+/* Show underlines when individual block is hovered */
+.elt-underline-container.elt-individual-visible {
+    display: block !important;
 }
 
-/* Meaning block wrapper - inline element that includes whitespace between words */
-.elt-meaning-block {
-    display: inline;
+/* Hover zone - invisible element covering entire meaning block for continuous hover */
+.elt-hover-zone {
+    position: absolute;
+    pointer-events: auto;
     cursor: pointer;
+    z-index: 10;
     border-radius: 3px;
-    padding: 1px 0;
-    /* Background color set via inline style from JS */
+    /* Transparent by default */
+    background-color: transparent;
+    transition: background-color 0.1s ease;
 }
 
-/* Show backgrounds when "Show Meaning Blocks" toggle is enabled */
-body.elt-show-highlighting .elt-meaning-block[data-bg-color] {
-    background-color: var(--block-bg);
+/* Light blue highlight on hover */
+.elt-hover-zone:hover,
+.elt-hover-zone.elt-hovered {
+    background-color: rgba(135, 206, 235, 0.35);
 }
 
-/* Also show backgrounds when translations are visible (button held) */
-body.elt-translations-visible .elt-meaning-block[data-bg-color] {
-    background-color: var(--block-bg);
+/* Container for hover zones */
+.elt-hover-zone-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 10;
 }
 
-/* Show background when hovered (for individual translations) */
-.elt-meaning-block.elt-hovered[data-bg-color] {
-    background-color: var(--block-bg);
+/* Allow hover zones inside container to receive events */
+.elt-hover-zone-container .elt-hover-zone {
+    pointer-events: auto;
+}
+
+/* Individual translation pill - white text on black background */
+.translation-line {
+    position: absolute;
+    pointer-events: none;
+    white-space: nowrap;
+    text-align: center;
+    transform: translateX(-50%);
+
+    /* Typography - tight line height */
+    font-size: 0.68em;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    line-height: 1.1;
+    margin: 0;
+
+    /* White on black pill style - minimal padding */
+    color: #ffffff;
+    background-color: #1a1a1a;
+    padding: 1px 5px;
+    border-radius: 2px;
+
+    /* Prevent overflow */
+    max-width: 90vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
