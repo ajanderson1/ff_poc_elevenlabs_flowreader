@@ -221,6 +221,14 @@ let isProcessing = false;
 let hasProcessedInitially = false; // Ensures LLM call only happens once per page load
 let activeOverlays = []; // Stores { range, overlayElement, debugElement, type }
 let isUsingCachedTranslations = false; // Track if we're loading from cache
+let isExtensionActive = false; // Tracks if extension is currently enabled and initialized
+
+// --- Event Handler References (for cleanup) ---
+let keydownHandler = null;
+let keyupHandler = null;
+let mousemoveHandler = null;
+let resizeHandler = null;
+let scrollHandler = null;
 
 // --- Cost Tracking State ---
 // Running totals for cost summary (reset per page load)
@@ -823,8 +831,7 @@ function updateOverlayPositions() {
     });
 }
 
-window.addEventListener('resize', updateOverlayPositions);
-window.addEventListener('scroll', updateOverlayPositions);
+// Event listeners are registered in registerEventListeners() and cleaned up in teardown()
 
 // --- UI Components ---
 
@@ -1201,6 +1208,11 @@ function init() {
         injectProcessingBanner();
         injectToggleButton();
 
+        // Register event listeners
+        registerEventListeners();
+
+        // Mark as active
+        isExtensionActive = true;
 
         // Initial process
         processParagraphs();
@@ -1671,8 +1683,9 @@ function navigateSentences(direction, state) {
     }, DOUBLE_PRESS_THRESHOLD);
 }
 
-// Main keyboard event handler
-document.addEventListener('keydown', (e) => {
+// --- Event Handler Functions (named for cleanup) ---
+
+function handleKeydown(e) {
     // Don't interfere with typing in inputs
     const activeEl = document.activeElement;
     const isTyping = activeEl && (
@@ -1765,31 +1778,43 @@ document.addEventListener('keydown', (e) => {
         navigateMeaningBlocks('right', navState.right);
         return;
     }
-});
+}
 
-// Keyboard event handler for key release (for "/" translation toggle)
-document.addEventListener('keyup', (e) => {
+function handleKeyup(e) {
     // "/" key: Hide translations on release
     if (e.key === '/') {
         e.preventDefault();
         setTranslationsVisibility(false);
     }
-});
+}
 
 // Listen for storage changes to update settings in real-time
 chrome.storage.onChanged.addListener((changes, namespace) => {
     Logger.log("Storage changed:", { namespace, keys: Object.keys(changes) });
     if (namespace === 'sync') {
-        if (changes.partitioningEnabled) {
-            Logger.log("partitioningEnabled changed:", changes.partitioningEnabled.newValue);
-            updateHighlightingVisibility(changes.partitioningEnabled.newValue);
-            // Re-render with new setting
-            Logger.log("Calling reRenderAll...");
-            reRenderAll();
+        // Handle main enable/disable toggle
+        if (changes.enabled) {
+            const isEnabled = changes.enabled.newValue !== false;
+            Logger.log("enabled changed:", isEnabled);
+            if (isEnabled) {
+                reinitialize();
+            } else {
+                teardown();
+            }
         }
-        if (changes.individualTranslations) {
-            Logger.log("individualTranslations changed:", changes.individualTranslations.newValue);
-            CONFIG.individualTranslations = changes.individualTranslations.newValue !== false;
+        // Only process other changes if extension is active
+        if (isExtensionActive) {
+            if (changes.partitioningEnabled) {
+                Logger.log("partitioningEnabled changed:", changes.partitioningEnabled.newValue);
+                updateHighlightingVisibility(changes.partitioningEnabled.newValue);
+                // Re-render with new setting
+                Logger.log("Calling reRenderAll...");
+                reRenderAll();
+            }
+            if (changes.individualTranslations) {
+                Logger.log("individualTranslations changed:", changes.individualTranslations.newValue);
+                CONFIG.individualTranslations = changes.individualTranslations.newValue !== false;
+            }
         }
     }
 });
@@ -1798,7 +1823,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 // Uses mousemove instead of direct event listeners so ElevenLabs word highlighting still works
 let currentlyHoveredBlock = null;
 
-document.addEventListener('mousemove', (e) => {
+function handleMousemove(e) {
     if (!CONFIG.individualTranslations) return;
     if (translationsVisible) return; // Don't interfere when all translations shown
 
@@ -1841,5 +1866,192 @@ document.addEventListener('mousemove', (e) => {
 
         currentlyHoveredBlock = hoveredBlock;
     }
-});
+}
+
+// --- Event Registration and Cleanup ---
+
+/**
+ * Registers all event listeners and stores references for cleanup
+ */
+function registerEventListeners() {
+    // Store handler references
+    keydownHandler = handleKeydown;
+    keyupHandler = handleKeyup;
+    mousemoveHandler = handleMousemove;
+    resizeHandler = updateOverlayPositions;
+    scrollHandler = updateOverlayPositions;
+
+    // Register listeners
+    document.addEventListener('keydown', keydownHandler);
+    document.addEventListener('keyup', keyupHandler);
+    document.addEventListener('mousemove', mousemoveHandler);
+    window.addEventListener('resize', resizeHandler);
+    window.addEventListener('scroll', scrollHandler);
+
+    Logger.log("Event listeners registered");
+}
+
+/**
+ * Removes all event listeners
+ */
+function unregisterEventListeners() {
+    if (keydownHandler) {
+        document.removeEventListener('keydown', keydownHandler);
+        keydownHandler = null;
+    }
+    if (keyupHandler) {
+        document.removeEventListener('keyup', keyupHandler);
+        keyupHandler = null;
+    }
+    if (mousemoveHandler) {
+        document.removeEventListener('mousemove', mousemoveHandler);
+        mousemoveHandler = null;
+    }
+    if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+        resizeHandler = null;
+    }
+    if (scrollHandler) {
+        window.removeEventListener('scroll', scrollHandler);
+        scrollHandler = null;
+    }
+
+    Logger.log("Event listeners unregistered");
+}
+
+/**
+ * Removes all UI elements created by the extension
+ */
+function removeAllUIElements() {
+    // Remove all translation overlays and related elements
+    document.querySelectorAll('.translation-overlay-container').forEach(el => el.remove());
+    document.querySelectorAll('.elt-underline-container').forEach(el => el.remove());
+    document.querySelectorAll('.elt-hover-zone-container').forEach(el => el.remove());
+
+    // Remove toggle button
+    const toggleBtn = document.getElementById('elevenlabs-translator-toggle');
+    if (toggleBtn) toggleBtn.remove();
+
+    // Remove processing banner
+    const banner = document.getElementById('elevenlabs-processing-banner');
+    if (banner) banner.remove();
+
+    // Remove error notifications
+    const errorNotif = document.getElementById('elevenlabs-error-notification');
+    if (errorNotif) errorNotif.remove();
+
+    // Remove body classes
+    document.body.classList.remove('elt-translations-visible');
+    document.body.classList.remove('elt-show-highlighting');
+
+    Logger.log("All UI elements removed");
+}
+
+/**
+ * Clears paragraph translation data and state
+ */
+function clearParagraphData() {
+    const paragraphs = document.querySelectorAll(`#preview-content ${TRANSLATABLE_SELECTOR}`);
+    paragraphs.forEach(p => {
+        if (p._translationOverlays) {
+            p._translationOverlays.forEach(el => el.remove());
+            p._translationOverlays = [];
+        }
+        delete p._fullResponse;
+        delete p._wordMap;
+        delete p._hasTranslations;
+    });
+}
+
+/**
+ * Tears down the extension - removes all UI, listeners, and resets state.
+ * Called when the extension is disabled.
+ */
+function teardown() {
+    if (!isExtensionActive) {
+        Logger.log("Teardown called but extension not active");
+        return;
+    }
+
+    Logger.log("Tearing down extension...");
+
+    // Remove event listeners
+    unregisterEventListeners();
+
+    // Remove all UI elements
+    removeAllUIElements();
+
+    // Clear paragraph data
+    clearParagraphData();
+
+    // Clear navigation timers
+    if (navState.left.seekTimer) clearTimeout(navState.left.seekTimer);
+    if (navState.right.seekTimer) clearTimeout(navState.right.seekTimer);
+    if (navState.shiftLeft.seekTimer) clearTimeout(navState.shiftLeft.seekTimer);
+    if (navState.shiftRight.seekTimer) clearTimeout(navState.shiftRight.seekTimer);
+    navState.left = { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null };
+    navState.right = { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null };
+    navState.shiftLeft = { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null };
+    navState.shiftRight = { lastTime: 0, count: 0, baseIndex: -1, seekTimer: null };
+
+    // Reset state (but preserve translationsVisible for restoration)
+    activeOverlays = [];
+    currentlyHoveredBlock = null;
+    isProcessing = false;
+    hasProcessedInitially = false;
+
+    // Mark as inactive
+    isExtensionActive = false;
+
+    Logger.log("Extension torn down");
+}
+
+/**
+ * Reinitializes the extension after being disabled.
+ * Restores UI, event listeners, and processes paragraphs.
+ */
+function reinitialize() {
+    if (isExtensionActive) {
+        Logger.log("Reinitialize called but extension already active");
+        return;
+    }
+
+    const contentDiv = document.getElementById('preview-content');
+    if (!contentDiv) {
+        Logger.warn("Cannot reinitialize - #preview-content not found");
+        return;
+    }
+
+    Logger.log("Reinitializing extension...");
+
+    // Reload settings
+    chrome.storage.sync.get(['partitioningEnabled', 'individualTranslations', 'limitSingleParagraph'], (result) => {
+        CONFIG.individualTranslations = result.individualTranslations !== false;
+        CONFIG.limitSingleParagraph = result.limitSingleParagraph === true;
+
+        // Apply highlighting visibility
+        updateHighlightingVisibility(result.partitioningEnabled);
+
+        // Re-inject UI elements
+        injectProcessingBanner();
+        injectToggleButton();
+
+        // Register event listeners
+        registerEventListeners();
+
+        // Mark as active
+        isExtensionActive = true;
+
+        // Restore translation visibility state
+        if (translationsVisible) {
+            setTranslationsVisibility(true);
+        }
+
+        // Re-process paragraphs (will use cache)
+        hasProcessedInitially = false;
+        processParagraphs();
+
+        Logger.log("Extension reinitialized");
+    });
+}
 
