@@ -1,6 +1,6 @@
 # Issue #4: Arrow Key Navigation Limited to Two Presses
 
-**GitHub Issue:** https://github.com/ajanderson1/elevenlabs_flowreader/issues/4
+**GitHub Issue:** https://github.com/ajanderson1/ff_poc_elevenlabs_flowreader/issues/4
 
 ## Problem Summary
 

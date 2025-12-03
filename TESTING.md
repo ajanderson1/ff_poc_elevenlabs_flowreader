@@ -6,7 +6,7 @@ Follow these steps to test the ElevenLabs Translator extension on the real site.
 1.  Open Chrome and navigate to `chrome://extensions`.
 2.  Enable **Developer mode** (toggle in the top right).
 3.  Click **Load unpacked**.
-4.  Select the directory: `/Users/ajanderson/GitHub/chrome_plugins/elevenlabslanguage`.
+4.  Select the directory: `/Users/ajanderson/GitHub/chrome_plugins/ff_poc_elevenlabs_flowreader`.
     -   *Note: If you have already loaded it, click the **Reload** (circular arrow) icon on the extension card.*
 
 ## 2. Configure API Key

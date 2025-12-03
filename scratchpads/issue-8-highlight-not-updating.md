@@ -1,6 +1,6 @@
 # Issue #8: Arrow Key Navigation - Highlighted Word Not Updating
 
-**GitHub Issue:** https://github.com/ajanderson1/elevenlabs_flowreader/issues/8
+**GitHub Issue:** https://github.com/ajanderson1/ff_poc_elevenlabs_flowreader/issues/8
 
 ## Problem Summary
 

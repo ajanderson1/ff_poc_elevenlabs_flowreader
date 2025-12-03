@@ -1,6 +1,6 @@
 # Issue #6: Hover Translation Disappears on Whitespace
 
-**Issue Link:** https://github.com/ajanderson1/elevenlabs_flowreader/issues/6
+**Issue Link:** https://github.com/ajanderson1/ff_poc_elevenlabs_flowreader/issues/6
 
 ## Problem
 

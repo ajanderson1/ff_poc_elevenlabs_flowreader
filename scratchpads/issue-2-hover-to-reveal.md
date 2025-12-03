@@ -1,6 +1,6 @@
 # Issue #2: Add Hover-to-Reveal for Individual Meaning Blocks
 
-**Issue Link:** https://github.com/ajanderson1/elevenlabs_flowreader/issues/2
+**Issue Link:** https://github.com/ajanderson1/ff_poc_elevenlabs_flowreader/issues/2
 
 ## Problem Statement
 

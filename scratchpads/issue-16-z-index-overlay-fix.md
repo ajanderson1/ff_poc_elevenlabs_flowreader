@@ -1,7 +1,7 @@
 # Issue #16: Translation overlays appear on top of navigation bar
 
-**Issue Link:** https://github.com/ajanderson1/elevenlabs_flowreader/issues/16
-**PR:** https://github.com/ajanderson1/elevenlabs_flowreader/pull/18
+**Issue Link:** https://github.com/ajanderson1/ff_poc_elevenlabs_flowreader/issues/16
+**PR:** https://github.com/ajanderson1/ff_poc_elevenlabs_flowreader/pull/18
 
 ## Problem
 

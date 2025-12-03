@@ -1,6 +1,6 @@
 # Issue #11: Replace Underlines with Background Color Highlighting
 
-**Issue Link:** https://github.com/ajanderson1/elevenlabs_flowreader/issues/11
+**Issue Link:** https://github.com/ajanderson1/ff_poc_elevenlabs_flowreader/issues/11
 
 ## Problem
 

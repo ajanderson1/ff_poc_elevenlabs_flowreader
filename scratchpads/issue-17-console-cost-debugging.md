@@ -1,6 +1,6 @@
 # Issue #17: Add Console Cost Debugging
 
-**Issue Link:** https://github.com/ajanderson1/elevenlabs_flowreader/issues/17
+**Issue Link:** https://github.com/ajanderson1/ff_poc_elevenlabs_flowreader/issues/17
 
 ## Summary
 

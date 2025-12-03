@@ -1,6 +1,6 @@
 # Issue #1: Translation skips headers and titles
 
-**GitHub Issue:** https://github.com/ajanderson1/elevenlabs_flowreader/issues/1
+**GitHub Issue:** https://github.com/ajanderson1/ff_poc_elevenlabs_flowreader/issues/1
 
 ## Problem Summary
 
