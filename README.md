@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/FlowReader_lm.png" alt="Frictionless FlowReader" width="400">
+  <img src="assets/FlowReader@2x.png" alt="Frictionless FlowReader" width="400">
 </p>
 
 # ElevenLabs Reader Translator
