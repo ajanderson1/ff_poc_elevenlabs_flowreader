@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/FlowReader_lm.png" alt="Frictionless FlowReader" width="400">
+</p>
+
 # ElevenLabs Reader Translator
 
 A Chrome extension that injects inline translations into [ElevenLabs Reader](https://elevenreader.io) pages. Uses OpenAI's GPT-5-mini to split text into grammatical "meaning blocks" and display translations as hovering overlays above the original text.
